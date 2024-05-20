@@ -1,0 +1,7 @@
+**/target
+**/*.gguf
+rag-console/rag-console
+**/*.dylib
+**/*.html
+**/*.db
+**/.fastembed_cache
