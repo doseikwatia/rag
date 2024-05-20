@@ -3,7 +3,7 @@ use clap::{arg, value_parser, Command};
 const DEFAULT_DB: &str = "data.db";
 pub const CMD_TRAIN: &str = "train";
 pub const CMD_CONSOLE: &str = "console";
-const DEFAULT_VECTOR_SIZE:&str = "1024";
+const DEFAULT_VECTOR_SIZE:&str = "384";
 const DEFAULT_TABLE_NAME: &str = "document";
 const DEFAULT_CHUNK_SIZE: &str = "512";
 const DEFAULT_CONTEXT_SIZE : &str = "4096";

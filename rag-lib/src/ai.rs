@@ -159,7 +159,7 @@ async fn create_store(
     vector_dim: i32,
 ) -> Result<Store, Box<dyn Error>> {
     let embedder = FastEmbed::from(TextEmbedding::try_new(InitOptions {
-        model_name: EmbeddingModel::BGELargeENV15,
+        model_name: EmbeddingModel::BGESmallENV15,
         show_download_progress: true,
         ..Default::default()
     })?);
