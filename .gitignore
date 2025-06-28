@@ -5,3 +5,4 @@ rag-console/rag-console
 **/*.html
 **/*.db
 **/.fastembed_cache
+bin/

@@ -1,15 +1,14 @@
-use clap::{arg, value_parser, Command};
+use clap::{arg, value_parser, ArgAction, Command};
 
 const DEFAULT_DB: &str = "data.db";
 pub const CMD_TRAIN: &str = "train";
 pub const CMD_CONSOLE: &str = "console";
-const DEFAULT_VECTOR_SIZE:&str = "384";
+const DEFAULT_VECTOR_SIZE: &str = "384";
 const DEFAULT_TABLE_NAME: &str = "document";
-const DEFAULT_CHUNK_SIZE: &str = "512";
-const DEFAULT_CONTEXT_SIZE : &str = "4096";
-const DEFAULT_MINTYPEDELAY: &str = "50";
-const DEFAULT_MAXTYPEDELAY: &str = "100";
-const DEFAULT_RETRIEVEDOCCOUNT: &str = "5";
+const DEFAULT_CHUNK_SIZE: &str = "256";
+const DEFAULT_CHUNK_OVERLAP: &str = "32";
+const DEFAULT_CONTEXT_SIZE: &str = "8192";
+const DEFAULT_RETRIEVEDOCCOUNT: &str = "3";
 
 pub fn cli() -> Command {
     Command::new("rag")
@@ -46,6 +45,14 @@ pub fn cli() -> Command {
                         .default_value(DEFAULT_CHUNK_SIZE)
                         .required(false),
                 )
+                .arg(
+                    arg!(-o --overlap <OVERLAP>)
+                        .num_args(1)
+                        .value_parser(value_parser!(usize))
+                        .default_value(DEFAULT_CHUNK_OVERLAP)
+                        .required(false),
+                )
+                .arg(arg!(-g --gpu "Use GPU").action(ArgAction::SetTrue))
                 .arg(
                     arg!(-z --contextsize <CONTEXTSIZE>)
                         .num_args(1)
@@ -88,6 +95,7 @@ pub fn cli() -> Command {
                         .default_value(DEFAULT_CHUNK_SIZE)
                         .required(false),
                 )
+                .arg(arg!(-g --gpu "Use GPU").action(ArgAction::SetTrue))
                 .arg(
                     arg!(-z --contextsize <CONTEXTSIZE>)
                         .num_args(1)
@@ -96,25 +104,11 @@ pub fn cli() -> Command {
                         .required(false),
                 )
                 .arg(
-                    arg!(--min_type_delay <MINTYPEDELAY>)
-                        .num_args(1)
-                        .value_parser(value_parser!(u64))
-                        .default_value(DEFAULT_MINTYPEDELAY)
-                        .required(false),
-                )
-                .arg(
-                    arg!(--max_type_delay <MAXTYPEDELAY>)
-                        .num_args(1)
-                        .value_parser(value_parser!(u64))
-                        .default_value(DEFAULT_MAXTYPEDELAY)
-                        .required(false),
-                )
-                .arg(
                     arg!(-r --retrieve_doc_count <RETRIEVEDOCCOUNT>)
-                    .num_args(1)
-                    .value_parser(value_parser!(usize))
-                    .default_value(DEFAULT_RETRIEVEDOCCOUNT)
-                    .required(false),
+                        .num_args(1)
+                        .value_parser(value_parser!(usize))
+                        .default_value(DEFAULT_RETRIEVEDOCCOUNT)
+                        .required(false),
                 ),
         )
 }

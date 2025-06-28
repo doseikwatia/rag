@@ -1,16 +1,14 @@
 [package]
 name = "rag-console"
 version = "0.1.0"
+authors = ["Daniel Osei"]
 edition = "2021"
 
 [dependencies]
-async-trait = "0.1.80"
-clap = { version = "4.5.4", features = ["derive"] }
-colored = "2.1.0"
-futures-util = "0.3.30"
-langchain-rust = { version= "4.1.1", features=["sqlite"]}
-llama_cpp = {version="0.3.2", features=["metal"]}
-serde_json = "1.0.117"
-tokio = "1.37.0"
-rag-lib = {path="../rag-lib"}
-rand = "0.8.5"
+clap = { version = "4.5.40", features = ["derive"] }
+colored = "3.0.0"
+futures-util = "0.3.31"
+tokio = "1.45.1"
+rag-lib = { path = "../rag-lib" }
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
