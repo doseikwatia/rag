@@ -1,20 +1,24 @@
 mod cli;
+use crate::cli::CMD_TRAIN;
+use clap::ArgMatches;
+use cli::{cli, CMD_CONSOLE};
+use rag_lib::{
+    ai::{Assistant, Trainer},
+    dprintln,
+};
 use std::{
     io::{stdin, stdout, Write},
     sync::{Arc, Mutex},
     thread::{self, JoinHandle},
     time,
 };
-
-use crate::cli::CMD_TRAIN;
-use clap::ArgMatches;
-use cli::{cli, CMD_CONSOLE};
-use colored::Colorize;
-use rag_lib::ai::{Assistant, Trainer};
-use rand::Rng;
+use tracing_subscriber::fmt::Subscriber;
 
 #[tokio::main]
 async fn main() {
+    Subscriber::builder()
+        .with_max_level(tracing::Level::WARN)
+        .init();
     let cli_matches = cli().get_matches();
     match cli_matches.subcommand() {
         Some((sub_command, sub_matches)) => {
@@ -28,11 +32,12 @@ async fn main() {
             let vector_dim = *sub_matches
                 .get_one::<i32>("vectorsize")
                 .expect("failed to get vectorsize");
+            let use_gpu = sub_matches.get_flag("gpu");
 
             if sub_command == CMD_TRAIN {
-                start_training(sub_matches, &database, &table_name, vector_dim).await
+                start_training(sub_matches, &database, &table_name, vector_dim, use_gpu).await
             } else if sub_command == CMD_CONSOLE {
-                start_console(sub_matches, &database, &table_name, vector_dim).await;
+                start_console(sub_matches, &database, &table_name, vector_dim, use_gpu).await;
             }
         }
         None => {}
@@ -57,12 +62,24 @@ async fn start_training(
     database: &str,
     table_name: &str,
     vector_dim: i32,
+    use_gpu: bool,
 ) {
     let main_is_processing = Arc::new(Mutex::new(false));
     let doc_chunk_size = *sub_matches
         .get_one::<usize>("chunksize")
         .expect("failed to get chunksize");
-    let trainer = Trainer::new(&database, table_name, vector_dim, doc_chunk_size).await;
+    let doc_overlap = *sub_matches
+        .get_one::<usize>("overlap")
+        .expect("failed to get overlap");
+    let trainer = Trainer::new(
+        &database,
+        table_name,
+        vector_dim,
+        doc_chunk_size,
+        doc_overlap,
+        use_gpu,
+    )
+    .await;
     let sources = sub_matches
         .get_many::<String>("sources")
         .unwrap()
@@ -85,8 +102,8 @@ async fn start_console(
     database: &str,
     table_name: &str,
     vector_dim: i32,
+    use_gpu:bool
 ) {
-    let main_is_processing = Arc::new(Mutex::new(false));
     let model_filename = sub_matches.get_one::<String>("model").unwrap();
     let retrieve_doc_count = *sub_matches
         .get_one::<usize>("retrieve_doc_count")
@@ -94,13 +111,6 @@ async fn start_console(
     let contex_szie = *sub_matches
         .get_one::<u32>("contextsize")
         .expect("failed to get contextsize");
-    let min_type_delay = *sub_matches
-        .get_one::<u64>("min_type_delay")
-        .expect("failed to get min_type_delay");
-    let max_type_delay = *sub_matches
-        .get_one::<u64>("max_type_delay")
-        .expect("failed to get max_type_delay");
-    let mut rng = rand::thread_rng();
     let ai_assistant = Assistant::new(
         &database,
         &table_name,
@@ -108,6 +118,7 @@ async fn start_console(
         model_filename,
         contex_szie,
         retrieve_doc_count,
+        use_gpu
     )
     .await;
     let mut usr_input = String::new();
@@ -119,37 +130,15 @@ async fn start_console(
         let cleaned_input = usr_input.trim();
         if cleaned_input == ":x" {
             break;
-        }else if cleaned_input == "^[[A" {
+        } else if cleaned_input == "^[[A" {
             print!("up arrow")
-        }
-         else if cleaned_input.len() == 0 {
+        } else if cleaned_input.len() == 0 {
             continue;
         }
-        //set up progress indicator
-        let anim_is_processing = Arc::clone(&main_is_processing);
-        let processing_anim_handler = show_processing_animation(anim_is_processing);
-
         //do work
-        let answer_result = ai_assistant.ask(&usr_input.trim()).await;
+        dprintln!("calling ask");
+        ai_assistant.ask(&usr_input.trim()).await;
 
-        if answer_result.is_err() {
-            println!("{}", "something went wrong  :(".red());
-            handle_process_anim(&main_is_processing, processing_anim_handler);
-            continue;
-        }
-
-        //clean up
-        handle_process_anim(&main_is_processing, processing_anim_handler);
-
-        //display ai answer
-        format!("\nAI\t> {}", answer_result.unwrap().trim())
-            .chars()
-            .for_each(|c| {
-                print!("{}", c.to_string().blue());
-                stdout().flush().expect("unable to flush standard output");
-                let delay = rng.gen_range(min_type_delay..max_type_delay);
-                thread::sleep(time::Duration::from_millis(delay));
-            });
         println!("");
     }
 }

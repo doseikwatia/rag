@@ -1,3 +1,4 @@
+use crate::dprintln;
 use crate::llama::Llama;
 use core::fmt;
 use futures_util::future::join_all;
@@ -5,26 +6,29 @@ use futures_util::StreamExt;
 use langchain_rust::chain::{
     Chain, ConversationalRetrieverChain, ConversationalRetrieverChainBuilder,
 };
-use langchain_rust::document_loaders::{HtmlLoader, TextLoader};
-use langchain_rust::embedding::{EmbeddingModel, InitOptions, TextEmbedding};
-use langchain_rust::memory::SimpleMemory;
-use langchain_rust::prompt::HumanMessagePromptTemplate;
-use langchain_rust::schemas::Message;
-use langchain_rust::text_splitter::SplitterOptions;
-use langchain_rust::url::Url;
-use langchain_rust::vectorstore::VecStoreOptions;
 use langchain_rust::{
-    document_loaders::{lo_loader::LoPdfLoader, InputFormat, Loader, PandocLoader},
-    embedding::FastEmbed,
+    document_loaders::{
+        lo_loader::LoPdfLoader, HtmlLoader, InputFormat, Loader, PandocLoader, TextLoader,
+    },
+    embedding::{EmbeddingModel, FastEmbed, InitOptions, TextEmbedding},
+    fmt_message, fmt_template,
+    memory::WindowBufferMemory,
+    message_formatter,
+    prompt::HumanMessagePromptTemplate,
+    prompt_args,
     schemas::Document,
-    text_splitter::TokenSplitter,
+    schemas::Message,
+    template_jinja2,
+    text_splitter::{SplitterOptions, TokenSplitter},
+    url::Url,
     vectorstore::{
         sqlite_vss::{Store, StoreBuilder},
-        Retriever, VectorStore,
+        Retriever, VecStoreOptions, VectorStore,
     },
 };
-use langchain_rust::{fmt_message, fmt_template, message_formatter, prompt_args, template_jinja2};
+
 use std::error::Error;
+use std::io::{self, Write};
 use std::path::Path;
 use std::result::Result;
 use std::{fs, future};
@@ -54,25 +58,34 @@ impl Error for AiError {
 pub struct Trainer {
     store: Store,
     chunk_size: usize,
+    chunk_overlap: usize,
 }
 pub struct Assistant {
     chain: ConversationalRetrieverChain,
 }
 impl Trainer {
-    pub async fn new(database: &str, table: &str, vector_dim: i32, chunk_size: usize) -> Self {
-        let train_store = create_store(database, table, vector_dim)
+    pub async fn new(
+        database: &str,
+        table: &str,
+        vector_dim: i32,
+        chunk_size: usize,
+        chunk_overlap: usize,
+        use_gpu: bool,
+    ) -> Self {
+        let train_store = create_store(database, table, vector_dim, use_gpu)
             .await
             .expect("failed to create train store");
 
         Trainer {
             store: train_store,
             chunk_size: chunk_size,
+            chunk_overlap: chunk_overlap,
         }
     }
 
     pub async fn train(&self, sources: Vec<String>) -> Result<(), Box<dyn Error>> {
         let (oks, errors): (Vec<_>, Vec<_>) = join_all(sources.iter().map(|path| async move {
-            return get_docs(&path, self.chunk_size).await;
+            return get_docs(&path, self.chunk_size, self.chunk_overlap).await;
         }))
         .await
         .into_iter()
@@ -113,13 +126,14 @@ impl Assistant {
         vector_dim: i32,
         model_filename: &str,
         context_length: u32,
-        retrieve_doc_count:usize 
+        retrieve_doc_count: usize,
+        use_gpu:bool
     ) -> Self {
-        let retriev_store = create_store(database, table, vector_dim)
+        let retriev_store = create_store(database, table, vector_dim, use_gpu)
             .await
             .expect("failed to create retrieve store");
         // let llm = OpenAI::default().with_model(OpenAIModel::Gpt35.to_string());
-        let llm = Llama::new(model_filename, context_length);
+        let llm = Llama::new(model_filename, context_length, use_gpu);
         let prompt= message_formatter![
                             fmt_message!(Message::new_system_message("You are a helpful assistant")),
                             fmt_template!(HumanMessagePromptTemplate::new(
@@ -132,23 +146,37 @@ impl Assistant {
 
         Helpful Answer: ","context","question")))];
 
+        let memory = WindowBufferMemory::new(3);
         let chain = ConversationalRetrieverChainBuilder::new()
             .llm(llm)
-            .rephrase_question(true)
-            .memory(SimpleMemory::new().into())
+            .rephrase_question(false)
+            .memory(memory.into())
             .retriever(Retriever::new(retriev_store, retrieve_doc_count))
             .prompt(prompt)
             .build()
             .expect("Error building ConversationalChain");
         Assistant { chain: chain }
     }
-    pub async fn ask(&self, question: &str) -> Result<String, Box<dyn Error>> {
+    pub async fn ask(&self, question: &str) {
+        dprintln!("Ask called");
         let input_variables = prompt_args! {
             "question" => question,
         };
-        match self.chain.invoke(input_variables).await {
-            Ok(r) => Ok(r),
-            Err(err) => Err(Box::new(err)),
+        let mut stream = self
+            .chain
+            .stream(input_variables)
+            .await
+            .expect("Failed to create stream");
+        print!("\nAI\t> ");
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(value) => {
+                    let bytes = value.value.as_str().unwrap().as_bytes();
+                    let _ = io::stdout().write(bytes);
+                    let _ = io::stdout().flush();
+                }
+                Err(e) => panic!("Error invoking LLMChain: {e:}"),
+            }
         }
     }
 }
@@ -157,35 +185,30 @@ async fn create_store(
     database: &str,
     table: &str,
     vector_dim: i32,
+    _use_gpu: bool,
 ) -> Result<Store, Box<dyn Error>> {
-    let embedder = FastEmbed::from(TextEmbedding::try_new(InitOptions {
-        model_name: EmbeddingModel::BGESmallENV15,
-        show_download_progress: true,
-        ..Default::default()
-    })?);
-    // if embedder.is_err() {
-    //     return Err(Box::new(embedder.err().unwrap()));
-    // }
-    // let embedder = embedder.unwrap();
+    dprintln!("{database:}");
+
+    let init_options = InitOptions::new(EmbeddingModel::BGESmallENV15)
+        .with_show_download_progress(true);
+    let model = TextEmbedding::try_new(init_options)?;
+    let embedder = FastEmbed::from(model);
     let store = StoreBuilder::new()
         .connection_url(database)
         .embedder(embedder)
         .table(table)
         .vector_dimensions(vector_dim)
         .build()
-        .await;
-    if store.is_err() {
-        return Err(store.err().unwrap());
-    }
-    let store = store.unwrap();
-    let str_init = store.initialize().await;
-    if str_init.is_err() {
-        return Err(str_init.err().unwrap());
-    }
+        .await?;
+    store.initialize().await?;
     Ok(store)
 }
 
-pub async fn get_docs(path: &str, split_size: usize) -> Result<Vec<Document>, Box<dyn Error>> {
+pub async fn get_docs(
+    path: &str,
+    split_size: usize,
+    chunk_overlap: usize,
+) -> Result<Vec<Document>, Box<dyn Error>> {
     let extension = Path::extension(Path::new(path));
 
     if extension.is_none() {
@@ -194,7 +217,8 @@ pub async fn get_docs(path: &str, split_size: usize) -> Result<Vec<Document>, Bo
     let extension = extension.unwrap_or_default().to_str().unwrap();
     let splitter_options = SplitterOptions::new()
         .with_chunk_size(split_size)
-        .with_trim_chunks(false);
+        .with_chunk_overlap(chunk_overlap);
+
     let splitter = TokenSplitter::new(splitter_options);
 
     let docs = if extension == "html" {
