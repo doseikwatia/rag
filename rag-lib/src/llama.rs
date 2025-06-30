@@ -24,11 +24,12 @@ impl Llama {
     pub fn new(model_filename: &str, context_length: u32, use_gpu: bool) -> Self {
         let mut params = LlamaParams::default();
         params.n_gpu_layers = match use_gpu {
-            true => 9999,
+            true => 99999,
             false => 0,
         };
         params.split_mode = SplitMode::Row;
         params.use_mlock = true;
+        params.use_mmap = false;
 
         // Create a model from anything that implements `AsRef<Path>`:
         let model =
@@ -95,7 +96,7 @@ impl LLM for Llama {
                 )
             })
             .collect();
-        let convo = chat.join("\n");
+        let convo = chat.join(". ");
         self.generate(&convo).await
     }
 
@@ -108,7 +109,7 @@ impl LLM for Llama {
             .into_iter()
             .map(|p| format!("{}:{}", p.message_type.to_string(), p.content))
             .collect();
-        let convo = chat.join("\n");
+        let convo = chat.join(". ");
 
         let mut ctx = self
             .model

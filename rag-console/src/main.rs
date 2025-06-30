@@ -3,8 +3,8 @@ use crate::cli::CMD_TRAIN;
 use clap::ArgMatches;
 use cli::{cli, CMD_CONSOLE};
 use rag_lib::{
-    ai::{Assistant, Trainer},
     dprintln,
+    rag::{RAGAssistant, RAGTrainer},
 };
 use std::{
     io::{stdin, stdout, Write},
@@ -71,7 +71,7 @@ async fn start_training(
     let doc_overlap = *sub_matches
         .get_one::<usize>("overlap")
         .expect("failed to get overlap");
-    let trainer = Trainer::new(
+    let trainer = RAGTrainer::new(
         &database,
         table_name,
         vector_dim,
@@ -102,7 +102,7 @@ async fn start_console(
     database: &str,
     table_name: &str,
     vector_dim: i32,
-    use_gpu:bool
+    use_gpu: bool,
 ) {
     let model_filename = sub_matches.get_one::<String>("model").unwrap();
     let retrieve_doc_count = *sub_matches
@@ -111,14 +111,14 @@ async fn start_console(
     let contex_szie = *sub_matches
         .get_one::<u32>("contextsize")
         .expect("failed to get contextsize");
-    let ai_assistant = Assistant::new(
+    let mut ai_assistant = RAGAssistant::new(
         &database,
         &table_name,
         vector_dim,
         model_filename,
         contex_szie,
         retrieve_doc_count,
-        use_gpu
+        use_gpu,
     )
     .await;
     let mut usr_input = String::new();
@@ -128,17 +128,25 @@ async fn start_console(
         stdout().flush().expect("unable to flush standard output");
         stdin().read_line(&mut usr_input).unwrap();
         let cleaned_input = usr_input.trim();
-        if cleaned_input == ":x" {
-            break;
-        } else if cleaned_input == "^[[A" {
-            print!("up arrow")
-        } else if cleaned_input.len() == 0 {
-            continue;
-        }
-        //do work
-        dprintln!("calling ask");
-        ai_assistant.ask(&usr_input.trim()).await;
 
+        match cleaned_input {
+            ":x" => {
+                print!("\nSystem\t> ");
+                println!("Exiting");
+                break;
+            }
+            ":c" => {
+                ai_assistant.clear().await;
+                print!("\nSystem\t> ");
+                println!("Context cleared");
+                continue;
+            }
+            "^[[A" => print!("up arrow"),
+            _ => {
+                dprintln!("calling ask");
+                ai_assistant.ask(&usr_input.trim()).await;
+            }
+        }
         println!("");
     }
 }
