@@ -4,8 +4,6 @@ use langchain_rust::schemas::Document;
 use langchain_rust::vectorstore::{VecStoreOptions, VectorStore};
 use std::error::Error;
 
-use crate::dprintln;
-
 
 pub struct RerankerWrapper<V>
 where

@@ -87,7 +87,7 @@ where
     async fn add_documents(
         &self,
         docs: &[Document],
-        opt: &VecStoreOptions,
+        _opt: &VecStoreOptions,
     ) -> Result<Vec<String>, Box<dyn Error>> {
         let page_contents: Vec<String> = docs.iter().map(|d| d.page_content.clone()).collect();
         let embeddings = self
@@ -128,7 +128,7 @@ where
         &self,
         query: &str,
         limit: usize,
-        opt: &VecStoreOptions,
+        _opt: &VecStoreOptions,
     ) -> Result<Vec<Document>, Box<dyn Error>> {
         let query_emb = self.embedder.embed_query(query).await?;
         let response = self

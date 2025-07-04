@@ -2,7 +2,7 @@ use langchain_rust::{
     document_loaders::{
         lo_loader::LoPdfLoader, HtmlLoader, InputFormat, Loader, PandocLoader, TextLoader,
     },
-    embedding::{EmbeddingModel, FastEmbed, InitOptions, TextEmbedding},
+    embedding::{FastEmbed, InitOptions, TextEmbedding},
     schemas::Document,
     text_splitter::{SplitterOptions, TokenSplitter},
     url::Url,
@@ -14,7 +14,6 @@ use langchain_rust::{
 
 use crate::{
     configuration::{Config, EmbeddingModelCfg},
-    dprintln,
     utilities::{
         configuration::StoreType, elasticsearchstore::ElasticsearchStore, errors::AiError,
         reranker_wrapper::RerankerWrapper,
