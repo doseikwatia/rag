@@ -3,8 +3,7 @@ use crate::cli::CMD_TRAIN;
 use cli::{cli, CMD_CONSOLE};
 use rag_lib::{
     configuration::Config,
-    get_store,
-    dprintln,
+    dprintln, get_store,
     rag::{RAGAssistant, RAGTrainer},
 };
 use std::fs::File;
@@ -62,6 +61,14 @@ fn show_processing_animation(exit_processing: Arc<Mutex<bool>>) -> JoinHandle<()
 }
 
 async fn start_training(config: &Config, sources: Vec<String>) {
+    let (_, max_chunk_size) = config.embedding_model.get_info();
+    assert!(
+        max_chunk_size >= config.chunk_size,
+        "chunk_size {} is greater than max chunk_size, {} supported by embedding model, {:?}.",
+        config.chunk_size,
+        max_chunk_size,
+        config.embedding_model
+    );
     let store = get_store(config).await;
     let main_is_processing = Arc::new(Mutex::new(false));
     let trainer = RAGTrainer::new(
@@ -85,7 +92,7 @@ async fn start_training(config: &Config, sources: Vec<String>) {
 
 async fn start_console(config: &Config) {
     let store = get_store(config).await;
-    
+
     let mut ai_assistant = RAGAssistant::new(
         &config.llm_model,
         config.context_size,
