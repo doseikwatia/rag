@@ -1,8 +1,7 @@
 use crate::dprintln;
-use crate::errors::AiError;
-use crate::helpers::{create_sqlite_store, get_docs};
+use crate::helpers::{ get_docs};
 use crate::llama::Llama;
-use crate::utilities::reranker_wrapper::RerankerWrapper;
+use crate::utilities::errors::AiError;
 use futures_util::future::join_all;
 use futures_util::StreamExt;
 use langchain_rust::chain::{
@@ -17,7 +16,7 @@ use langchain_rust::{
     schemas::Document,
     schemas::Message,
     template_jinja2,
-    vectorstore::{sqlite_vss::Store, Retriever, VecStoreOptions, VectorStore},
+    vectorstore::{Retriever, VecStoreOptions, VectorStore},
 };
 
 use std::error::Error;
@@ -26,30 +25,19 @@ use std::result::Result;
 
 pub struct RAGTrainer
 {
-    store: RerankerWrapper<Store>,
+    store: Box<dyn VectorStore>,
     chunk_size: usize,
     chunk_overlap: usize,
 }
 pub struct RAGAssistant {
-    chain: ConversationalRetrieverChain,
+    chain:   ConversationalRetrieverChain,
 }
 
 impl RAGTrainer
 {
-    pub async fn new(
-        database: &str,
-        table: &str,
-        vector_dim: i32,
-        chunk_size: usize,
-        chunk_overlap: usize,
-        use_gpu: bool,
-    ) -> Self {
-        let train_store = create_sqlite_store(database, table, vector_dim, use_gpu)
-            .await
-            .expect("failed to create train store");
-
+    pub async fn new(store: Box<dyn VectorStore>, chunk_size: usize, chunk_overlap: usize, _use_gpu: bool) -> Self {
         RAGTrainer {
-            store: train_store,
+            store: store,
             chunk_size: chunk_size,
             chunk_overlap: chunk_overlap,
         }
@@ -93,19 +81,14 @@ impl RAGTrainer
 
 impl RAGAssistant {
     pub async fn new(
-        database: &str,
-        table: &str,
-        vector_dim: i32,
         model_filename: &str,
         context_length: u32,
+        retriev_store: Box<dyn VectorStore>,
         retrieve_doc_count: usize,
         use_gpu: bool,
     ) -> Self {
-        let retriev_store = create_sqlite_store(database, table, vector_dim, use_gpu)
-            .await
-            .expect("failed to create retrieve store");
-        // let llm = OpenAI::default().with_model(OpenAIModel::Gpt35.to_string());
-        let llm = Llama::new(model_filename, context_length, use_gpu);
+        let model = model_filename.to_string();
+        let llm = Llama::new(&model, context_length, use_gpu);
         let prompt = message_formatter![
             fmt_message!(Message::new_system_message(
                 "You are a helpful assistant who always explains things clearly and concisely."
