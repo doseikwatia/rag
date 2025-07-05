@@ -1,12 +1,13 @@
+use crate::utilities::errors::AiError;
 use async_trait::async_trait;
 use elasticsearch::auth::Credentials;
 use elasticsearch::http::request::JsonBody;
 use elasticsearch::http::response::Response;
 use elasticsearch::http::transport::Transport;
+use elasticsearch::indices::IndicesCreateParts;
 use elasticsearch::BulkParts;
 use elasticsearch::Elasticsearch;
 use elasticsearch::Error as ESerror;
-use elasticsearch::IndexParts;
 use elasticsearch::SearchParts;
 use langchain_rust::embedding::Embedder;
 use langchain_rust::schemas::Document;
@@ -14,8 +15,6 @@ use langchain_rust::vectorstore::VecStoreOptions;
 use langchain_rust::vectorstore::VectorStore;
 use serde_json::{json, Value};
 use std::error::Error;
-
-use crate::utilities::errors::AiError;
 
 pub struct ElasticsearchStore<E>
 where
@@ -54,7 +53,8 @@ where
     }
     pub async fn initialize(&self) -> Result<Response, ESerror> {
         self.client
-            .index(IndexParts::Index(&self.index))
+            .indices()
+            .create(IndicesCreateParts::Index(&self.index))
             .body(json!({
             "mappings": {
                 "properties": {
@@ -96,10 +96,10 @@ where
             .await
             .expect("failed to generate page_contents embeddings");
 
-        let body: Vec<JsonBody<_>> = docs
-            .iter()
-            .zip(embeddings)
-            .map(|(doc, emb)| {
+        let mut body: Vec<JsonBody<_>> = Vec::with_capacity(embeddings.len());
+        docs.iter().zip(embeddings).for_each(|(doc, emb)| {
+            body.push(json!({"index": {}}).into());
+            body.push(
                 json!(
                     {
                         "page_content": doc.page_content,
@@ -107,9 +107,9 @@ where
                         "embedding": emb
                     }
                 )
-                .into()
-            })
-            .collect();
+                .into(),
+            );
+        });
 
         let response = self
             .client
@@ -119,8 +119,8 @@ where
             .await?;
         let response_body = response.json::<Value>().await?;
         match response_body["errors"].as_bool().unwrap() {
-            true => Ok(page_contents.to_vec()),
-            false => Err(Box::new(AiError::new(&response_body.to_string()))),
+            false => Ok(page_contents.to_vec()),
+            true => Err(Box::new(AiError::new(&response_body.to_string()))),
         }
     }
 
@@ -136,22 +136,26 @@ where
             .search(SearchParts::Index(&[self.index.as_str()]))
             .size(limit as i64)
             .body(json!({
-                "query":{
-                    "match_all": {}
+            "query": {
+              "script_score": {
+                "query": {
+                  "match_all": {}
                 },
                 "script": {
-                    "source": "cosineSimilarity(params.query_emb, 'embedding') + 1.0",
-                    "params": {
-                        "query_emb": query_emb
-                    }
+                  "source": "cosineSimilarity(params.query_emb, 'embedding') + 1.0",
+                  "params": {
+                    "query_emb": query_emb
+                  }
                 }
-            }))
+              }
+            }
+                      }))
             .send()
             .await?;
         let response_body = response.json::<Value>().await?;
         let result: Vec<Document> = response_body["hits"]["hits"]
             .as_array()
-            .unwrap()
+            .expect("could not extract array from response body hits.hits")
             .iter()
             .map(|j| {
                 let content = j["_source"]["page_content"]

@@ -30,7 +30,7 @@ async fn main() {
             let file = File::open(config_path).expect("could not open configuration file");
             let config: Config =
                 serde_yaml::from_reader(file).expect("could not parse config yaml");
-            println!("{:?}", config);
+            dprintln!("{config:?}",);
 
             if sub_command == CMD_TRAIN {
                 let sources = sub_matches
