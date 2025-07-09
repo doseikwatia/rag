@@ -1,5 +1,5 @@
 use crate::dprintln;
-use crate::helpers::{ get_docs};
+use crate::helpers::get_docs;
 use crate::llama::Llama;
 use crate::utilities::errors::AiError;
 use futures_util::future::join_all;
@@ -7,6 +7,7 @@ use futures_util::StreamExt;
 use langchain_rust::chain::{
     Chain, ConversationalRetrieverChain, ConversationalRetrieverChainBuilder,
 };
+use langchain_rust::llm::client::{GenerationOptions, OllamaClient};
 use langchain_rust::{
     fmt_message, fmt_template,
     memory::WindowBufferMemory,
@@ -18,24 +19,32 @@ use langchain_rust::{
     template_jinja2,
     vectorstore::{Retriever, VecStoreOptions, VectorStore},
 };
+use url::Url;
 
 use std::error::Error;
 use std::io::{self, Write};
 use std::result::Result;
+use std::sync::Arc;
 
-pub struct RAGTrainer
-{
+use langchain_rust::language_models::llm::LLM;
+use langchain_rust::llm::ollama::client::Ollama;
+
+pub struct RAGTrainer {
     store: Box<dyn VectorStore>,
     chunk_size: usize,
     chunk_overlap: usize,
 }
 pub struct RAGAssistant {
-    chain:   ConversationalRetrieverChain,
+    chain: ConversationalRetrieverChain,
 }
 
-impl RAGTrainer
-{
-    pub async fn new(store: Box<dyn VectorStore>, chunk_size: usize, chunk_overlap: usize, _use_gpu: bool) -> Self {
+impl RAGTrainer {
+    pub async fn new(
+        store: Box<dyn VectorStore>,
+        chunk_size: usize,
+        chunk_overlap: usize,
+        _use_gpu: bool,
+    ) -> Self {
         RAGTrainer {
             store: store,
             chunk_size: chunk_size,
@@ -86,9 +95,21 @@ impl RAGAssistant {
         retriev_store: Box<dyn VectorStore>,
         retrieve_doc_count: usize,
         use_gpu: bool,
+        ollama_url: Option<Url>,
     ) -> Self {
         let model = model_filename.to_string();
-        let llm = Llama::new(&model, context_length, use_gpu);
+
+        let llm: Box<dyn LLM> = match ollama_url {
+            Some(url) => {
+                let ollama_client = Arc::new(OllamaClient::from_url(url));
+                let generation_options = GenerationOptions::default().num_ctx(context_length);
+                Box::new(
+                    Ollama::new(ollama_client, model_filename, None).with_model(model_filename).with_options(generation_options),
+                )
+            }
+            None => Box::new(Llama::new(&model, context_length, use_gpu)),
+        };
+
         let prompt = message_formatter![
             fmt_message!(Message::new_system_message(
                 "You are a helpful assistant who always explains things clearly and concisely."
@@ -140,10 +161,11 @@ impl RAGAssistant {
         print!("\nAI\t> ");
         while let Some(result) = stream.next().await {
             match result {
-                Ok(value) => {
-                    let bytes = value.value.as_str().unwrap().as_bytes();
-                    let _ = io::stdout().write(bytes);
-                    let _ = io::stdout().flush();
+                Ok(data) => {
+
+                        let _ = io::stdout().write(data.content.as_bytes());
+                        let _ = io::stdout().flush();
+                
                 }
                 Err(e) => panic!("Error invoking LLMChain: {e:}"),
             }

@@ -724,12 +724,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cudarc"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9395df0cab995685664e79cc35ad6302bf08fb9c5d82301875a183affe1278b1"
-
-[[package]]
 name = "darling"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2054,6 +2048,7 @@ dependencies = [
  "log",
  "lopdf",
  "mockito",
+ "ollama-rs",
  "readability",
  "regex",
  "reqwest 0.12.20",
@@ -2198,7 +2193,6 @@ checksum = "037a1881ada3592c6a922224d5177b4b4f452e6b2979eb97393b71989e48357f"
 dependencies = [
  "bindgen",
  "cc",
- "cudarc",
  "link-cplusplus",
  "once_cell",
 ]
@@ -2611,6 +2605,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62948e14d923ea95ea2c7c86c71013138b66525b86bdc08d2dcc262bdb497b87"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "ollama-rs"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "763afb01db2dced00e656cc2cdcd875659fc3fac4c449e6337a4f04f9e3d9efc"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "log",
+ "reqwest 0.12.20",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "url",
 ]
 
 [[package]]
@@ -3101,6 +3112,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-stream",
+ "url",
 ]
 
 [[package]]

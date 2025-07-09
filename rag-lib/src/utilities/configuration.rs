@@ -193,6 +193,7 @@ pub struct Config {
     #[serde(default = "default_retrieve_doc_count")]
     pub retrieve_doc_count: usize,
     pub llm_model: String,
+    pub ollama_url: String,
     #[serde(default = "default_embedding_model")]
     pub embedding_model: EmbeddingModelCfg,
 }

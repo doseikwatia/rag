@@ -6,6 +6,7 @@ use rag_lib::{
     dprintln, get_store,
     rag::{RAGAssistant, RAGTrainer},
 };
+use url::Url;
 use std::fs::File;
 use std::{
     io::{stdin, stdout, Write},
@@ -92,13 +93,14 @@ async fn start_training(config: &Config, sources: Vec<String>) {
 
 async fn start_console(config: &Config) {
     let store = get_store(config).await;
-
+    let ollama_url = Url::parse(&config.ollama_url).ok();
     let mut ai_assistant = RAGAssistant::new(
         &config.llm_model,
         config.context_size,
         store,
         config.retrieve_doc_count,
         config.use_gpu,
+        ollama_url
     )
     .await;
     let mut usr_input = String::new();
