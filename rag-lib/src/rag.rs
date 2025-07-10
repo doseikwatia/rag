@@ -3,7 +3,7 @@ use crate::helpers::get_docs;
 use crate::llama::Llama;
 use crate::utilities::errors::AiError;
 use futures_util::future::join_all;
-use futures_util::StreamExt;
+use futures_util::Stream;
 use langchain_rust::chain::{
     Chain, ConversationalRetrieverChain, ConversationalRetrieverChainBuilder,
 };
@@ -22,7 +22,6 @@ use langchain_rust::{
 use url::Url;
 
 use std::error::Error;
-use std::io::{self, Write};
 use std::result::Result;
 use std::sync::Arc;
 
@@ -104,7 +103,9 @@ impl RAGAssistant {
                 let ollama_client = Arc::new(OllamaClient::from_url(url));
                 let generation_options = GenerationOptions::default().num_ctx(context_length);
                 Box::new(
-                    Ollama::new(ollama_client, model_filename, None).with_model(model_filename).with_options(generation_options),
+                    Ollama::new(ollama_client, model_filename, None)
+                        .with_model(model_filename)
+                        .with_options(generation_options),
                 )
             }
             None => Box::new(Llama::new(&model, context_length, use_gpu)),
@@ -148,27 +149,26 @@ impl RAGAssistant {
     }
 
     ///asks the rag chain question. The answer will be streamed to the standard output
-    pub async fn ask(&self, question: &str) {
+    pub async fn ask(
+        &self,
+        question: &str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn Stream<
+                    Item = Result<
+                        langchain_rust::schemas::StreamData,
+                        langchain_rust::chain::ChainError,
+                    >,
+                > + Send,
+        >,
+    > {
         dprintln!("Ask called");
         let input_variables = prompt_args! {
             "question" => question,
         };
-        let mut stream = self
-            .chain
+        self.chain
             .stream(input_variables)
             .await
-            .expect("Failed to create stream");
-        print!("\nAI\t> ");
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(data) => {
-
-                        let _ = io::stdout().write(data.content.as_bytes());
-                        let _ = io::stdout().flush();
-                
-                }
-                Err(e) => panic!("Error invoking LLMChain: {e:}"),
-            }
-        }
+            .expect("Failed to create stream")
     }
 }
