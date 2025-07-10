@@ -2,14 +2,23 @@ use langchain_rust::{
     document_loaders::{
         lo_loader::LoPdfLoader, HtmlLoader, InputFormat, Loader, PandocLoader, TextLoader,
     },
-    embedding::{EmbeddingModel, FastEmbed, InitOptions, TextEmbedding},
+    embedding::{FastEmbed, InitOptions, TextEmbedding},
     schemas::Document,
     text_splitter::{SplitterOptions, TokenSplitter},
     url::Url,
-    vectorstore::sqlite_vss::{Store, StoreBuilder},
+    vectorstore::{
+        sqlite_vss::{Store, StoreBuilder},
+        VectorStore,
+    },
 };
 
-use crate::{dprintln, errors::AiError, utilities::reranker_wrapper::RerankerWrapper};
+use crate::{
+    configuration::{Config, EmbeddingModelCfg},
+    utilities::{
+        configuration::StoreType, elasticsearchstore::ElasticsearchStore, errors::AiError,
+        reranker_wrapper::RerankerWrapper,
+    },
+};
 use futures_util::future;
 use futures_util::StreamExt;
 use std::error::Error;
@@ -18,13 +27,12 @@ use std::{fs, path::Path};
 pub async fn create_sqlite_store(
     database: &str,
     table: &str,
-    vector_dim: i32,
+    embedding_model: EmbeddingModelCfg,
     _use_gpu: bool,
 ) -> Result<RerankerWrapper<Store>, Box<dyn Error>> {
-    dprintln!("{database:}");
-
-    let init_options =
-        InitOptions::new(EmbeddingModel::BGESmallENV15).with_show_download_progress(true);
+    let (vector_dim, _) = embedding_model.get_info();
+    let embedding_model_name = embedding_model.into();
+    let init_options = InitOptions::new(embedding_model_name).with_show_download_progress(true);
     let model = TextEmbedding::try_new(init_options)?;
     let embedder = FastEmbed::from(model);
     let store = StoreBuilder::new()
@@ -35,16 +43,36 @@ pub async fn create_sqlite_store(
         .build()
         .await?;
     store.initialize().await?;
-    let wrapped_store = RerankerWrapper::new(2,store);
+    let wrapped_store = RerankerWrapper::new(2, store);
+    Ok(wrapped_store)
+}
+
+pub async fn create_elasticsearch_store(
+    urls: &[&str],
+    index_name: &str,
+    api_id: &str,
+    api_key: &str,
+    embedding_model: EmbeddingModelCfg,
+    _use_gpu: bool,
+) -> Result<RerankerWrapper<ElasticsearchStore<FastEmbed>>, Box<dyn Error>> {
+    let (vector_dim, _) = embedding_model.get_info();
+    let embedding_model_name = embedding_model.into();
+    let init_options = InitOptions::new(embedding_model_name).with_show_download_progress(true);
+    let model = TextEmbedding::try_new(init_options)?;
+    let embedder = FastEmbed::from(model);
+    let store = ElasticsearchStore::new(urls, api_id, api_key, embedder, vector_dim, index_name);
+    store.initialize().await?;
+    let wrapped_store = RerankerWrapper::new(2, store);
     Ok(wrapped_store)
 }
 
 pub async fn get_docs(
-    path: &str,
+    docpath: &str,
     split_size: usize,
     chunk_overlap: usize,
 ) -> Result<Vec<Document>, Box<dyn Error>> {
-    let extension = Path::extension(Path::new(path));
+    let path = Path::new(docpath);
+    let extension = Path::extension(path);
 
     if extension.is_none() {
         return Err(Box::new(AiError::new("no extension specified")));
@@ -56,13 +84,23 @@ pub async fn get_docs(
 
     let splitter = TokenSplitter::new(splitter_options);
 
+    let filename_value = Path::file_name(path)
+        .expect("failed to extract filename from the path")
+        .to_str()
+        .unwrap();
+    let filename_key = "filename".to_string();
+
     let docs = if extension == "html" {
-        HtmlLoader::from_path(path, Url::parse(&format!("file:///{}", path)).unwrap())
+        HtmlLoader::from_path(path, Url::parse(&format!("file:///{}", docpath)).unwrap())
             .expect("Failed to create html loader")
             .load_and_split(splitter)
             .await
             .unwrap()
-            .map(|x| x.unwrap())
+            .map(|x| {
+                let mut doc = x.expect("unable to get the document");
+                doc.metadata.insert(filename_key.clone(), filename_value.into());
+                doc
+            })
             .collect::<Vec<_>>()
             .await
     } else if extension == "pdf" {
@@ -71,7 +109,11 @@ pub async fn get_docs(
             .load_and_split(splitter)
             .await
             .unwrap()
-            .map(|d| d.unwrap())
+            .map(|x| {
+                let mut doc = x.expect("unable to get the document");
+                doc.metadata.insert(filename_key.clone(), filename_value.into());
+                doc
+            })
             .collect::<Vec<_>>()
             .await
     } else if extension == "txt" {
@@ -82,7 +124,11 @@ pub async fn get_docs(
 
         splits
             .filter(|e| future::ready(e.is_ok()))
-            .map(|d| d.unwrap())
+            .map(|x| {
+                let mut doc = x.expect("unable to get the document");
+                doc.metadata.insert(filename_key.clone(), filename_value.into());
+                doc
+            })
             .collect::<Vec<_>>()
             .await
     } else {
@@ -102,9 +148,50 @@ pub async fn get_docs(
             .load_and_split(splitter)
             .await
             .unwrap()
-            .map(|d| d.unwrap())
+            .map(|x| {
+                let mut doc = x.expect("unable to get the document");
+                doc.metadata.insert(filename_key.clone(), filename_value.into());
+                doc
+            })
             .collect::<Vec<_>>()
             .await
     };
     Ok(docs)
+}
+
+pub async fn get_store(config: &Config) -> Box<dyn VectorStore> {
+    let store: Box<dyn VectorStore> = match config.store_type {
+        StoreType::SQLITE => Box::new(
+            create_sqlite_store(
+                &config.sqlite.connection_string,
+                &config.sqlite.table,
+                config.embedding_model,
+                config.use_gpu,
+            )
+            .await
+            .expect("failed to create sqlite retrieve store"),
+        ),
+
+        StoreType::ELASTICSEARCH => {
+            let urls: Vec<&str> = config
+                .elasticsearch
+                .urls
+                .iter()
+                .map(|u| u.as_str())
+                .collect();
+            Box::new(
+                create_elasticsearch_store(
+                    urls.as_slice(),
+                    &config.elasticsearch.index,
+                    &config.elasticsearch.api_id,
+                    &config.elasticsearch.api_key,
+                    config.embedding_model,
+                    config.use_gpu,
+                )
+                .await
+                .expect("failed to create es retrieve store"),
+            )
+        }
+    };
+    store
 }

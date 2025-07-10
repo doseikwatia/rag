@@ -21,7 +21,7 @@ pub struct Llama {
 }
 
 impl Llama {
-    pub fn new(model_filename: &str, context_length: u32, use_gpu: bool) -> Self {
+    pub fn new(model_filename: &str, _context_length: u32, use_gpu: bool) -> Self {//setting _context_length to train_len for now
         let mut params = LlamaParams::default();
         params.n_gpu_layers = match use_gpu {
             true => 99999,
@@ -34,9 +34,11 @@ impl Llama {
         // Create a model from anything that implements `AsRef<Path>`:
         let model =
             LlamaModel::load_from_file(model_filename, params).expect("Could not load model");
+        
+        let n_ctx = model.train_len() as u32;
         Llama {
             model: Arc::new(model),
-            n_ctx: context_length,
+            n_ctx: n_ctx,
         }
     }
     async fn generate(&self, prompt: &str) -> Result<GenerateResult, LLMError> {

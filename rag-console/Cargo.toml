@@ -12,3 +12,6 @@ tokio = "1.45.1"
 rag-lib = { path = "../rag-lib" }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
+serde_yaml = "0.9.34"
+serde = "1.0.219"
+url = "2.5.4"

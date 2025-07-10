@@ -1,13 +1,13 @@
 use crate::dprintln;
-use crate::errors::AiError;
-use crate::helpers::{create_sqlite_store, get_docs};
+use crate::helpers::get_docs;
 use crate::llama::Llama;
-use crate::utilities::reranker_wrapper::RerankerWrapper;
+use crate::utilities::errors::AiError;
 use futures_util::future::join_all;
-use futures_util::StreamExt;
+use futures_util::Stream;
 use langchain_rust::chain::{
     Chain, ConversationalRetrieverChain, ConversationalRetrieverChainBuilder,
 };
+use langchain_rust::llm::client::{GenerationOptions, OllamaClient};
 use langchain_rust::{
     fmt_message, fmt_template,
     memory::WindowBufferMemory,
@@ -17,16 +17,19 @@ use langchain_rust::{
     schemas::Document,
     schemas::Message,
     template_jinja2,
-    vectorstore::{sqlite_vss::Store, Retriever, VecStoreOptions, VectorStore},
+    vectorstore::{Retriever, VecStoreOptions, VectorStore},
 };
+use url::Url;
 
 use std::error::Error;
-use std::io::{self, Write};
 use std::result::Result;
+use std::sync::Arc;
 
-pub struct RAGTrainer
-{
-    store: RerankerWrapper<Store>,
+use langchain_rust::language_models::llm::LLM;
+use langchain_rust::llm::ollama::client::Ollama;
+
+pub struct RAGTrainer {
+    store: Box<dyn VectorStore>,
     chunk_size: usize,
     chunk_overlap: usize,
 }
@@ -34,22 +37,15 @@ pub struct RAGAssistant {
     chain: ConversationalRetrieverChain,
 }
 
-impl RAGTrainer
-{
+impl RAGTrainer {
     pub async fn new(
-        database: &str,
-        table: &str,
-        vector_dim: i32,
+        store: Box<dyn VectorStore>,
         chunk_size: usize,
         chunk_overlap: usize,
-        use_gpu: bool,
+        _use_gpu: bool,
     ) -> Self {
-        let train_store = create_sqlite_store(database, table, vector_dim, use_gpu)
-            .await
-            .expect("failed to create train store");
-
         RAGTrainer {
-            store: train_store,
+            store: store,
             chunk_size: chunk_size,
             chunk_overlap: chunk_overlap,
         }
@@ -93,19 +89,28 @@ impl RAGTrainer
 
 impl RAGAssistant {
     pub async fn new(
-        database: &str,
-        table: &str,
-        vector_dim: i32,
         model_filename: &str,
         context_length: u32,
+        retriev_store: Box<dyn VectorStore>,
         retrieve_doc_count: usize,
         use_gpu: bool,
+        ollama_url: Option<Url>,
     ) -> Self {
-        let retriev_store = create_sqlite_store(database, table, vector_dim, use_gpu)
-            .await
-            .expect("failed to create retrieve store");
-        // let llm = OpenAI::default().with_model(OpenAIModel::Gpt35.to_string());
-        let llm = Llama::new(model_filename, context_length, use_gpu);
+        let model = model_filename.to_string();
+
+        let llm: Box<dyn LLM> = match ollama_url {
+            Some(url) => {
+                let ollama_client = Arc::new(OllamaClient::from_url(url));
+                let generation_options = GenerationOptions::default().num_ctx(context_length);
+                Box::new(
+                    Ollama::new(ollama_client, model_filename, None)
+                        .with_model(model_filename)
+                        .with_options(generation_options),
+                )
+            }
+            None => Box::new(Llama::new(&model, context_length, use_gpu)),
+        };
+
         let prompt = message_formatter![
             fmt_message!(Message::new_system_message(
                 "You are a helpful assistant who always explains things clearly and concisely."
@@ -144,26 +149,26 @@ impl RAGAssistant {
     }
 
     ///asks the rag chain question. The answer will be streamed to the standard output
-    pub async fn ask(&self, question: &str) {
+    pub async fn ask(
+        &self,
+        question: &str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn Stream<
+                    Item = Result<
+                        langchain_rust::schemas::StreamData,
+                        langchain_rust::chain::ChainError,
+                    >,
+                > + Send,
+        >,
+    > {
         dprintln!("Ask called");
         let input_variables = prompt_args! {
             "question" => question,
         };
-        let mut stream = self
-            .chain
+        self.chain
             .stream(input_variables)
             .await
-            .expect("Failed to create stream");
-        print!("\nAI\t> ");
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(value) => {
-                    let bytes = value.value.as_str().unwrap().as_bytes();
-                    let _ = io::stdout().write(bytes);
-                    let _ = io::stdout().flush();
-                }
-                Err(e) => panic!("Error invoking LLMChain: {e:}"),
-            }
-        }
+            .expect("Failed to create stream")
     }
 }
