@@ -1,13 +1,13 @@
 mod cli;
 use crate::cli::CMD_TRAIN;
 use cli::{cli, CMD_CONSOLE};
+use futures_util::StreamExt;
 use rag_lib::{
     configuration::Config,
     dprintln, get_store,
     rag::{RAGAssistant, RAGTrainer},
 };
-use url::Url;
-use std::fs::File;
+use std::{fs::File, io};
 use std::{
     io::{stdin, stdout, Write},
     path::PathBuf,
@@ -16,6 +16,7 @@ use std::{
     time,
 };
 use tracing_subscriber::fmt::Subscriber;
+use url::Url;
 
 #[tokio::main]
 async fn main() {
@@ -92,6 +93,7 @@ async fn start_training(config: &Config, sources: Vec<String>) {
 }
 
 async fn start_console(config: &Config) {
+    let main_is_processing = Arc::new(Mutex::new(false));
     let store = get_store(config).await;
     let ollama_url = Url::parse(&config.ollama_url).ok();
     let mut ai_assistant = RAGAssistant::new(
@@ -100,7 +102,7 @@ async fn start_console(config: &Config) {
         store,
         config.retrieve_doc_count,
         config.use_gpu,
-        ollama_url
+        ollama_url,
     )
     .await;
     let mut usr_input = String::new();
@@ -126,7 +128,21 @@ async fn start_console(config: &Config) {
             "^[[A" => print!("up arrow"),
             _ => {
                 dprintln!("calling ask");
-                ai_assistant.ask(&usr_input.trim()).await;
+                //progress indicator setup
+                let anim_is_processing = Arc::clone(&main_is_processing);
+                let processing_anim_handler = show_processing_animation(anim_is_processing);
+                let mut stream = ai_assistant.ask(&usr_input.trim()).await;
+                handle_process_anim(&main_is_processing, processing_anim_handler);
+                print!("\nAI\t> ");
+                while let Some(result) = stream.next().await {
+                    match result {
+                        Ok(data) => {
+                            let _ = io::stdout().write(data.content.as_bytes());
+                            let _ = io::stdout().flush();
+                        }
+                        Err(e) => panic!("Error invoking LLMChain: {e:}"),
+                    }
+                }
             }
         }
         println!("");

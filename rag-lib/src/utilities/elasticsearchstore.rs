@@ -1,9 +1,12 @@
 use crate::utilities::errors::AiError;
 use async_trait::async_trait;
 use elasticsearch::auth::Credentials;
+use elasticsearch::cert::CertificateValidation;
 use elasticsearch::http::request::JsonBody;
 use elasticsearch::http::response::Response;
-use elasticsearch::http::transport::Transport;
+use elasticsearch::http::transport::MultiNodeConnectionPool;
+use elasticsearch::http::transport::SingleNodeConnectionPool;
+use elasticsearch::http::transport::TransportBuilder;
 use elasticsearch::indices::IndicesCreateParts;
 use elasticsearch::BulkParts;
 use elasticsearch::Elasticsearch;
@@ -15,6 +18,8 @@ use langchain_rust::vectorstore::VecStoreOptions;
 use langchain_rust::vectorstore::VectorStore;
 use serde_json::{json, Value};
 use std::error::Error;
+use std::time::Duration;
+use url::Url;
 
 pub struct ElasticsearchStore<E>
 where
@@ -38,10 +43,27 @@ where
         vector_dim: i32,
         index_name: &str,
     ) -> Self {
-        let transport =
-            Transport::static_node_list(urls.into()).expect("could not create transport");
+        let url_vec = urls
+            .iter()
+            .map(|u| Url::parse(u).expect("unable to parse url"))
+            .collect();
+        let transport_builder = if urls.len() > 1 {
+            TransportBuilder::new(MultiNodeConnectionPool::round_robin(
+                url_vec,
+                Some(Duration::from_secs(120)),
+            ))
+        } else if urls.len() == 1 {
+            TransportBuilder::new(SingleNodeConnectionPool::new(url_vec[0].clone()))
+        } else {
+            panic!("invalid number of elasticsearch hosts specified");
+        };
         let credentials = Credentials::ApiKey(api_id.to_string(), api_key.to_string());
-        transport.set_auth(credentials);
+        let transport = transport_builder
+            .auth(credentials)
+            .cert_validation(CertificateValidation::None)
+            .build()
+            .expect("failed to build transport");
+
         let client = Elasticsearch::new(transport);
         let index = index_name.to_string();
         ElasticsearchStore {

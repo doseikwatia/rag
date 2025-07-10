@@ -27,13 +27,12 @@ use std::{fs, path::Path};
 pub async fn create_sqlite_store(
     database: &str,
     table: &str,
-    embedding_model:EmbeddingModelCfg,
+    embedding_model: EmbeddingModelCfg,
     _use_gpu: bool,
 ) -> Result<RerankerWrapper<Store>, Box<dyn Error>> {
-    let (vector_dim,_) = embedding_model.get_info();
+    let (vector_dim, _) = embedding_model.get_info();
     let embedding_model_name = embedding_model.into();
-    let init_options =
-        InitOptions::new(embedding_model_name).with_show_download_progress(true);
+    let init_options = InitOptions::new(embedding_model_name).with_show_download_progress(true);
     let model = TextEmbedding::try_new(init_options)?;
     let embedder = FastEmbed::from(model);
     let store = StoreBuilder::new()
@@ -53,13 +52,12 @@ pub async fn create_elasticsearch_store(
     index_name: &str,
     api_id: &str,
     api_key: &str,
-    embedding_model:EmbeddingModelCfg,
+    embedding_model: EmbeddingModelCfg,
     _use_gpu: bool,
 ) -> Result<RerankerWrapper<ElasticsearchStore<FastEmbed>>, Box<dyn Error>> {
-    let (vector_dim,_) = embedding_model.get_info();
+    let (vector_dim, _) = embedding_model.get_info();
     let embedding_model_name = embedding_model.into();
-    let init_options =
-        InitOptions::new(embedding_model_name).with_show_download_progress(true);
+    let init_options = InitOptions::new(embedding_model_name).with_show_download_progress(true);
     let model = TextEmbedding::try_new(init_options)?;
     let embedder = FastEmbed::from(model);
     let store = ElasticsearchStore::new(urls, api_id, api_key, embedder, vector_dim, index_name);
@@ -69,11 +67,12 @@ pub async fn create_elasticsearch_store(
 }
 
 pub async fn get_docs(
-    path: &str,
+    docpath: &str,
     split_size: usize,
     chunk_overlap: usize,
 ) -> Result<Vec<Document>, Box<dyn Error>> {
-    let extension = Path::extension(Path::new(path));
+    let path = Path::new(docpath);
+    let extension = Path::extension(path);
 
     if extension.is_none() {
         return Err(Box::new(AiError::new("no extension specified")));
@@ -85,13 +84,23 @@ pub async fn get_docs(
 
     let splitter = TokenSplitter::new(splitter_options);
 
+    let filename_value = Path::file_name(path)
+        .expect("failed to extract filename from the path")
+        .to_str()
+        .unwrap();
+    let filename_key = "filename".to_string();
+
     let docs = if extension == "html" {
-        HtmlLoader::from_path(path, Url::parse(&format!("file:///{}", path)).unwrap())
+        HtmlLoader::from_path(path, Url::parse(&format!("file:///{}", docpath)).unwrap())
             .expect("Failed to create html loader")
             .load_and_split(splitter)
             .await
             .unwrap()
-            .map(|x| x.unwrap())
+            .map(|x| {
+                let mut doc = x.expect("unable to get the document");
+                doc.metadata.insert(filename_key.clone(), filename_value.into());
+                doc
+            })
             .collect::<Vec<_>>()
             .await
     } else if extension == "pdf" {
@@ -100,7 +109,11 @@ pub async fn get_docs(
             .load_and_split(splitter)
             .await
             .unwrap()
-            .map(|d| d.unwrap())
+            .map(|x| {
+                let mut doc = x.expect("unable to get the document");
+                doc.metadata.insert(filename_key.clone(), filename_value.into());
+                doc
+            })
             .collect::<Vec<_>>()
             .await
     } else if extension == "txt" {
@@ -111,7 +124,11 @@ pub async fn get_docs(
 
         splits
             .filter(|e| future::ready(e.is_ok()))
-            .map(|d| d.unwrap())
+            .map(|x| {
+                let mut doc = x.expect("unable to get the document");
+                doc.metadata.insert(filename_key.clone(), filename_value.into());
+                doc
+            })
             .collect::<Vec<_>>()
             .await
     } else {
@@ -131,7 +148,11 @@ pub async fn get_docs(
             .load_and_split(splitter)
             .await
             .unwrap()
-            .map(|d| d.unwrap())
+            .map(|x| {
+                let mut doc = x.expect("unable to get the document");
+                doc.metadata.insert(filename_key.clone(), filename_value.into());
+                doc
+            })
             .collect::<Vec<_>>()
             .await
     };
@@ -150,21 +171,27 @@ pub async fn get_store(config: &Config) -> Box<dyn VectorStore> {
             .await
             .expect("failed to create sqlite retrieve store"),
         ),
-        
+
         StoreType::ELASTICSEARCH => {
-            let urls:Vec<&str>= config.elasticsearch.urls.iter().map(|u|u.as_str()).collect();
+            let urls: Vec<&str> = config
+                .elasticsearch
+                .urls
+                .iter()
+                .map(|u| u.as_str())
+                .collect();
             Box::new(
-            create_elasticsearch_store(
-                urls.as_slice(),
-                &config.elasticsearch.index,
-                &config.elasticsearch.api_id,
-                &config.elasticsearch.api_key,
-                config.embedding_model,
-                config.use_gpu,
+                create_elasticsearch_store(
+                    urls.as_slice(),
+                    &config.elasticsearch.index,
+                    &config.elasticsearch.api_id,
+                    &config.elasticsearch.api_key,
+                    config.embedding_model,
+                    config.use_gpu,
+                )
+                .await
+                .expect("failed to create es retrieve store"),
             )
-            .await
-            .expect("failed to create es retrieve store"),
-        )},
+        }
     };
     store
 }
