@@ -1,0 +1,19 @@
+---
+store_type: elasticsearch
+elasticsearch:
+  api_id: api_id
+  api_key: api_key
+  index: document_index
+  urls:
+    - https://localhost:9200
+sqlite:
+  connection_string: "data.db"
+  table: document
+use_gpu: true
+chunk_size: 512
+chunk_overlap: 32
+context_size: 131072
+retrieve_doc_count: 5
+llm_model: "gemma3:12b"
+embedding_model: "nomicembedtextv15"
+ollama_url: http://127.0.0.1:11434/
