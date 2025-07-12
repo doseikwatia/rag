@@ -101,7 +101,7 @@ impl RAGAssistant {
         let llm: Box<dyn LLM> = match ollama_url {
             Some(url) => {
                 let ollama_client = Arc::new(OllamaClient::from_url(url));
-                let generation_options = GenerationOptions::default().num_ctx(context_length);
+                let generation_options = GenerationOptions::default().num_ctx(context_length).temperature(0.3_f32);
                 Box::new(
                     Ollama::new(ollama_client, model_filename, None)
                         .with_model(model_filename)
@@ -117,13 +117,12 @@ impl RAGAssistant {
             )),
             fmt_template!(HumanMessagePromptTemplate::new(template_jinja2!(
                 r#"
-        Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
-        
-        Context:{{context}}
-        
-        Question:{{question}}
-
-        Helpful Answer: "#,
+        Use the following pieces of context to answer the question at the end. Provide a conversational answer. If you don't know the answer, just say that you don't know, don't try to make up an answer.
+        Context:  {{context}}
+        =========
+        Question: {{question}}
+        =========
+        Answer in Markdown: "#,
                 "context",
                 "question"
             )))
