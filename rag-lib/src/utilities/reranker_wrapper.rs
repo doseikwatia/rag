@@ -41,19 +41,21 @@ where
     async fn similarity_search(
         &self,
         query: &str,
-        limit: usize,
+        k: usize,
         opt: &VecStoreOptions,
     ) -> Result<Vec<Document>, Box<dyn Error>> {
-        let docs = self.store.similarity_search(query, limit*self.limit_factor, opt).await?;
+        let docs = self.store.similarity_search(query, k*self.limit_factor, opt).await?;
         let doc_content = docs.iter().map(|d| d.page_content.as_str()).collect();
         // Optionally rerank with embedder/model
         let reranked: Vec<Document> = self
             .model
-            .rerank(query, doc_content, true, Some(limit))?
+            .rerank(query, doc_content, true, Some(k))?
             .iter()
-            .map(|r| Document::new((r.document).clone().unwrap()))
+            .map(|r| {
+                Document::new((r.document).clone().unwrap()).with_score(r.score as f64)
+            })
             .collect();
-        let head: Vec<Document> = reranked[0..limit].to_vec();
+        let head: Vec<Document> = reranked[0..k].to_vec();
         Ok(head)
     }
 }
