@@ -17,6 +17,7 @@ use langchain_rust::schemas::Document;
 use langchain_rust::vectorstore::VecStoreOptions;
 use langchain_rust::vectorstore::VectorStore;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
 use url::Url;
@@ -180,11 +181,26 @@ where
             .expect("could not extract array from response body hits.hits")
             .iter()
             .map(|j| {
+                //extracting content
                 let content = j["_source"]["page_content"]
                     .as_str()
                     .expect("could not extract page_content as string")
                     .to_string();
+                //extracting metadata
+                let metadata: HashMap<String, Value> = j["_source"]["metadata"]
+                    .as_object()
+                    .expect("could not retrieve metadata")
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+                //extracting score value
+                let score = j["_source"]["score"]
+                    .as_f64()
+                    .expect("could not retrieve score");
+                //composing document
                 Document::new(content)
+                    .with_metadata(metadata)
+                    .with_score(score)
             })
             .collect();
         Ok(result)

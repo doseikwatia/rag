@@ -1,5 +1,6 @@
 mod cli;
-use crate::cli::CMD_TRAIN;
+mod screen;
+use crate::{cli::CMD_TRAIN, screen::Screen};
 use cli::{cli, CMD_CONSOLE};
 use futures_util::StreamExt;
 use rag_lib::{
@@ -7,9 +8,9 @@ use rag_lib::{
     dprintln, get_store,
     rag::{RAGAssistant, RAGTrainer},
 };
-use std::{fs::File, io};
+use std::fs::File;
 use std::{
-    io::{stdin, stdout, Write},
+    io::{stdout, Write},
     path::PathBuf,
     sync::{Arc, Mutex},
     thread::{self, JoinHandle},
@@ -105,47 +106,45 @@ async fn start_console(config: &Config) {
         ollama_url,
     )
     .await;
-    let mut usr_input = String::new();
+    let mut screen = Screen::new(None);
     loop {
-        usr_input.clear();
-        print!("\nHuman\t> ");
-        stdout().flush().expect("unable to flush standard output");
-        stdin().read_line(&mut usr_input).unwrap();
-        let cleaned_input = usr_input.trim();
+        let cleaned_input = screen.read_human();
 
-        match cleaned_input {
+        match cleaned_input.as_str() {
             ":x" => {
-                print!("\nSystem\t> ");
-                println!("Exiting");
+                let _ = screen.write_system("Exiting\n");
                 break;
             }
             ":c" => {
                 ai_assistant.clear().await;
-                print!("\nSystem\t> ");
-                println!("Context cleared");
+                screen.clear();
+                let _ = screen.write_system("Context cleared\n");
                 continue;
             }
-            "^[[A" => print!("up arrow"),
             _ => {
+                if cleaned_input.is_empty(){
+                    continue;
+                }
                 dprintln!("calling ask");
                 //progress indicator setup
                 let anim_is_processing = Arc::clone(&main_is_processing);
                 let processing_anim_handler = show_processing_animation(anim_is_processing);
-                let mut stream = ai_assistant.ask(&usr_input.trim()).await;
+                let mut stream = ai_assistant.ask(&cleaned_input).await;
                 handle_process_anim(&main_is_processing, processing_anim_handler);
-                print!("\nAI\t> ");
+
+                let _ = screen.write_str("AI\t> ");
                 while let Some(result) = stream.next().await {
                     match result {
                         Ok(data) => {
-                            let _ = io::stdout().write(data.content.as_bytes());
-                            let _ = io::stdout().flush();
+                            let _ = screen.write_str(&data.content);
                         }
                         Err(e) => panic!("Error invoking LLMChain: {e:}"),
                     }
                 }
+                let _ = screen.write_str("\n");
             }
         }
-        println!("");
+        // println!("");
     }
 }
 
