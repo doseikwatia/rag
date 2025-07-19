@@ -117,7 +117,7 @@ impl RAGAssistant {
             )),
             fmt_template!(HumanMessagePromptTemplate::new(template_jinja2!(
                 r#"
-        Use the following pieces of context to answer the question at the end. Provide a conversational answer. If you don't know the answer, just say that you don't know, don't try to make up an answer.
+        Use the following pieces of context to answer the question at the end. Provide a conversational answer. If you don't know the answer, just say that you don't know, don't try to make up an answer. Cite document filenames and page numbers where applicable.
         Context:  {{context}}
         =========
         Question: {{question}}
