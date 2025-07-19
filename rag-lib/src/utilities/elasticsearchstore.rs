@@ -194,7 +194,7 @@ where
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
                 //extracting score value
-                let score = j["_source"]["score"]
+                let score = j["_score"]
                     .as_f64()
                     .expect("could not retrieve score");
                 //composing document

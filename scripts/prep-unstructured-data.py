@@ -174,7 +174,7 @@ def main():
         print(f"Index '{index_name}' already exists.")
     
     for file in tqdm(args.files):
-        elements= partition(file)
+        elements= partition(file,strategy="hi_res")
         chunks  = chunk_by_title(elements, overlap=chunk_overlap, max_characters=chunk_size)
         normalized_txt = map(lambda c: normalize_text(c.text,True),chunks)
         embeddings = list(embedder.passage_embed(normalized_txt))
