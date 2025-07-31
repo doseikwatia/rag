@@ -1,9 +1,10 @@
 mod cli;
 mod screen;
-use crate::{cli::CMD_TRAIN, screen::Screen};
+use crate::{cli::{CMD_AGENT, CMD_TRAIN}, screen::Screen};
 use cli::{cli, CMD_CONSOLE};
 use futures_util::StreamExt;
 use rag_lib::{
+    agent::RagAgent,
     configuration::Config,
     dprintln, get_store,
     rag::{RAGAssistant, RAGTrainer},
@@ -43,7 +44,9 @@ async fn main() {
                     .collect();
                 start_training(&config, sources).await
             } else if sub_command == CMD_CONSOLE {
-                start_console(&config).await;
+                start_rag_console(&config).await;
+            } else if sub_command == CMD_AGENT {
+                start_agent_console(&config).await;
             }
         }
         None => {}
@@ -93,12 +96,12 @@ async fn start_training(config: &Config, sources: Vec<String>) {
     handle_process_anim(&main_is_processing, processing_anim_handler);
 }
 
-async fn start_console(config: &Config) {
+async fn start_rag_console(config: &Config) {
     let main_is_processing = Arc::new(Mutex::new(false));
     let store = get_store(config).await;
     let ollama_url = Url::parse(&config.ollama_url).ok();
     let mut ai_assistant = RAGAssistant::new(
-        &config.llm_model,
+        &config.rag_llm_model,
         config.context_size,
         store,
         config.retrieve_doc_count,
@@ -122,7 +125,7 @@ async fn start_console(config: &Config) {
                 continue;
             }
             _ => {
-                if cleaned_input.is_empty(){
+                if cleaned_input.is_empty() {
                     continue;
                 }
                 dprintln!("calling ask");
@@ -141,6 +144,50 @@ async fn start_console(config: &Config) {
                         Err(e) => panic!("Error invoking LLMChain: {e:}"),
                     }
                 }
+                let _ = screen.write_str("\n");
+            }
+        }
+        // println!("");
+    }
+}
+
+async fn start_agent_console(config: &Config) {
+    let main_is_processing = Arc::new(Mutex::new(false));
+    let ollama_url = Url::parse(&config.ollama_url).ok();
+    let ai_agent = RagAgent::new(
+        &config.agt_llm_model,
+        config.context_size,
+        config.use_gpu,
+        ollama_url,
+        &config.threatfox_api_key
+    );
+    let mut screen = Screen::new(None);
+    loop {
+        let cleaned_input = screen.read_human();
+
+        match cleaned_input.as_str() {
+            ":x" => {
+                let _ = screen.write_system("Exiting\n");
+                break;
+            }
+            ":c" => {
+                screen.clear();
+                let _ = screen.write_system("Context cleared\n");
+                continue;
+            }
+            _ => {
+                if cleaned_input.is_empty() {
+                    continue;
+                }
+                dprintln!("calling ask");
+                //progress indicator setup
+                let anim_is_processing = Arc::clone(&main_is_processing);
+                let processing_anim_handler = show_processing_animation(anim_is_processing);
+                let output = ai_agent.invoke(&cleaned_input).await.expect("failed to execute agent");
+                handle_process_anim(&main_is_processing, processing_anim_handler);
+
+                let _ = screen.write_str("Agent\t> ");
+                let _ = screen.write_str(&output);
                 let _ = screen.write_str("\n");
             }
         }

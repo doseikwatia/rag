@@ -192,8 +192,10 @@ pub struct Config {
     pub context_size: u32,
     #[serde(default = "default_retrieve_doc_count")]
     pub retrieve_doc_count: usize,
-    pub llm_model: String,
+    pub rag_llm_model: String,
+    pub agt_llm_model: String,
     pub ollama_url: String,
     #[serde(default = "default_embedding_model")]
     pub embedding_model: EmbeddingModelCfg,
+    pub threatfox_api_key: String
 }

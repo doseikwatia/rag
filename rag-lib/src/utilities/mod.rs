@@ -3,3 +3,4 @@ pub(crate) mod elasticsearchstore;
 pub mod errors;
 pub mod macros;
 pub mod configuration;
+pub mod threatfox_tool;

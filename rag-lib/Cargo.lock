@@ -145,7 +145,7 @@ dependencies = [
  "eventsource-stream",
  "futures",
  "rand 0.8.5",
- "reqwest 0.12.20",
+ "reqwest 0.12.22",
  "reqwest-eventsource",
  "secrecy",
  "serde",
@@ -490,8 +490,10 @@ checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -888,6 +890,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dotenv"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
+
+[[package]]
 name = "dotenvy"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -942,7 +950,7 @@ dependencies = [
  "lazy_static",
  "parking_lot",
  "percent-encoding",
- "reqwest 0.12.20",
+ "reqwest 0.12.22",
  "rustc_version",
  "serde",
  "serde_json",
@@ -1466,7 +1474,7 @@ dependencies = [
  "log",
  "native-tls",
  "rand 0.9.1",
- "reqwest 0.12.20",
+ "reqwest 0.12.22",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -2051,7 +2059,7 @@ dependencies = [
  "ollama-rs",
  "readability",
  "regex",
- "reqwest 0.12.20",
+ "reqwest 0.12.22",
  "reqwest-eventsource",
  "scraper",
  "secrecy",
@@ -2616,7 +2624,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "log",
- "reqwest 0.12.20",
+ "reqwest 0.12.22",
  "serde",
  "serde_json",
  "tokio",
@@ -3102,12 +3110,15 @@ name = "rag-lib"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "colored",
+ "dotenv",
  "elasticsearch",
  "fastembed",
  "futures-util",
  "langchain-rust",
  "llama_cpp",
+ "reqwest 0.12.22",
  "serde",
  "serde_json",
  "tokio",
@@ -3392,9 +3403,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.20"
+version = "0.12.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eabf4c97d9130e2bf606614eb937e86edac8292eaa6f422f995d7e8de1eb1813"
+checksum = "cbc931937e6ca3a06e3b6c0aa7841849b160a90351d6ab467a8b9b9959767531"
 dependencies = [
  "async-compression",
  "base64 0.22.1",
@@ -3451,7 +3462,7 @@ dependencies = [
  "mime",
  "nom",
  "pin-project-lite",
- "reqwest 0.12.20",
+ "reqwest 0.12.22",
  "thiserror 1.0.69",
 ]
 

@@ -1,27 +1,21 @@
 use langchain_rust::{
     document_loaders::{
         lo_loader::LoPdfLoader, HtmlLoader, InputFormat, Loader, PandocLoader, TextLoader,
-    },
-    embedding::{FastEmbed, InitOptions, TextEmbedding},
-    schemas::Document,
-    text_splitter::{SplitterOptions, TokenSplitter},
-    url::Url,
-    vectorstore::{
+    }, embedding::{FastEmbed, InitOptions, TextEmbedding}, language_models::llm::LLM, llm::client::{GenerationOptions, Ollama, OllamaClient}, schemas::Document, text_splitter::{SplitterOptions, TokenSplitter}, url::Url, vectorstore::{
         sqlite_vss::{Store, StoreBuilder},
         VectorStore,
-    },
+    }
 };
 
 use crate::{
-    configuration::{Config, EmbeddingModelCfg},
-    utilities::{
+    configuration::{Config, EmbeddingModelCfg}, llama::Llama, utilities::{
         configuration::StoreType, elasticsearchstore::ElasticsearchStore, errors::AiError,
         reranker_wrapper::RerankerWrapper,
-    },
+    }
 };
 use futures_util::future;
 use futures_util::StreamExt;
-use std::error::Error;
+use std::{error::Error, sync::Arc};
 use std::{fs, path::Path};
 
 pub async fn create_sqlite_store(
@@ -194,4 +188,31 @@ pub async fn get_store(config: &Config) -> Box<dyn VectorStore> {
         }
     };
     store
+}
+
+
+pub fn get_llm(
+    model_filename: &str,
+    context_length: u32,
+    use_gpu: bool,
+    temperature: f32,
+    ollama_url: Option<Url>,
+) -> Box<dyn LLM> {
+    let model = model_filename.to_string();
+
+    let llm: Box<dyn LLM> = match ollama_url {
+        Some(url) => {
+            let ollama_client = Arc::new(OllamaClient::from_url(url));
+            let generation_options = GenerationOptions::default()
+                .num_ctx(context_length)
+                .temperature(temperature);
+            Box::new(
+                Ollama::new(ollama_client, model_filename, None)
+                    .with_model(model_filename)
+                    .with_options(generation_options),
+            )
+        }
+        None => Box::new(Llama::new(&model, context_length, use_gpu)),
+    };
+    llm
 }
