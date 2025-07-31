@@ -1,13 +1,12 @@
 use crate::dprintln;
-use crate::helpers::get_docs;
-use crate::llama::Llama;
+use crate::helpers::{get_docs, get_llm};
 use crate::utilities::errors::AiError;
 use futures_util::future::join_all;
 use futures_util::Stream;
 use langchain_rust::chain::{
-    Chain, ConversationalRetrieverChain, ConversationalRetrieverChainBuilder,
+    self, Chain, ConversationalRetrieverChain, ConversationalRetrieverChainBuilder
 };
-use langchain_rust::llm::client::{GenerationOptions, OllamaClient};
+use langchain_rust::schemas;
 use langchain_rust::{
     fmt_message, fmt_template,
     memory::WindowBufferMemory,
@@ -22,11 +21,9 @@ use langchain_rust::{
 use url::Url;
 
 use std::error::Error;
+use std::pin;
 use std::result::Result;
-use std::sync::Arc;
 
-use langchain_rust::language_models::llm::LLM;
-use langchain_rust::llm::ollama::client::Ollama;
 
 pub struct RAGTrainer {
     store: Box<dyn VectorStore>,
@@ -96,20 +93,7 @@ impl RAGAssistant {
         use_gpu: bool,
         ollama_url: Option<Url>,
     ) -> Self {
-        let model = model_filename.to_string();
-
-        let llm: Box<dyn LLM> = match ollama_url {
-            Some(url) => {
-                let ollama_client = Arc::new(OllamaClient::from_url(url));
-                let generation_options = GenerationOptions::default().num_ctx(context_length).temperature(0.0_f32);
-                Box::new(
-                    Ollama::new(ollama_client, model_filename, None)
-                        .with_model(model_filename)
-                        .with_options(generation_options),
-                )
-            }
-            None => Box::new(Llama::new(&model, context_length, use_gpu)),
-        };
+        let llm = get_llm(model_filename, context_length, use_gpu, 0.0_f32, ollama_url);
 
         let prompt = message_formatter![
             fmt_message!(Message::new_system_message(
@@ -151,12 +135,12 @@ impl RAGAssistant {
     pub async fn ask(
         &self,
         question: &str,
-    ) -> std::pin::Pin<
+    ) -> pin::Pin<
         Box<
             dyn Stream<
                     Item = Result<
-                        langchain_rust::schemas::StreamData,
-                        langchain_rust::chain::ChainError,
+                        schemas::StreamData,
+                        chain::ChainError,
                     >,
                 > + Send,
         >,
