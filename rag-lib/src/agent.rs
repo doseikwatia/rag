@@ -5,7 +5,7 @@ use langchain_rust::{
     chain::{options::ChainCallOptions, Chain, ChainError},
     memory::SimpleMemory,
     prompt_args,
-    tools::{CommandExecutor, Tool},
+    tools::Tool,
 };
 use url::Url;
 
@@ -25,10 +25,9 @@ impl RagAgent {
     ) -> Self {
         let memory = SimpleMemory::new();
         let llm = get_llm(model_filename, context_length, use_gpu, 0.4_f32, ollama_url);
-        let command_executor = CommandExecutor::default();
         let threatfox_tool =  ThreatFoxTool::new(&threatfox_api_key);
         
-        let tools: &[Arc<dyn Tool>] = &[Arc::new(command_executor), Arc::new(threatfox_tool)];
+        let tools: &[Arc<dyn Tool>] = &[Arc::new(threatfox_tool)];
         let agent = ConversationalAgentBuilder::new()
             .tools(tools)
             .options(ChainCallOptions::new().with_max_tokens(1024))

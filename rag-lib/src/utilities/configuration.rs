@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::impl_enum_from;
 use fastembed::EmbeddingModel;
 use serde::{Deserialize, Serialize};
@@ -66,6 +68,48 @@ pub enum EmbeddingModelCfg {
     /// jinaai/jina-embeddings-v2-base-code
     JinaEmbeddingsV2BaseCode,
 }
+
+
+impl FromStr for EmbeddingModelCfg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "AllMiniLML6V2" => Ok(EmbeddingModelCfg::AllMiniLML6V2),
+            "AllMiniLML6V2Q" => Ok(EmbeddingModelCfg::AllMiniLML6V2Q),
+            "AllMiniLML12V2" => Ok(EmbeddingModelCfg::AllMiniLML12V2),
+            "AllMiniLML12V2Q" => Ok(EmbeddingModelCfg::AllMiniLML12V2Q),
+            "BGEBaseENV15" => Ok(EmbeddingModelCfg::BGEBaseENV15),
+            "BGEBaseENV15Q" => Ok(EmbeddingModelCfg::BGEBaseENV15Q),
+            "BGELargeENV15" => Ok(EmbeddingModelCfg::BGELargeENV15),
+            "BGELargeENV15Q" => Ok(EmbeddingModelCfg::BGELargeENV15Q),
+            "BGESmallENV15" => Ok(EmbeddingModelCfg::BGESmallENV15),
+            "BGESmallENV15Q" => Ok(EmbeddingModelCfg::BGESmallENV15Q),
+            "NomicEmbedTextV1" => Ok(EmbeddingModelCfg::NomicEmbedTextV1),
+            "NomicEmbedTextV15" => Ok(EmbeddingModelCfg::NomicEmbedTextV15),
+            "NomicEmbedTextV15Q" => Ok(EmbeddingModelCfg::NomicEmbedTextV15Q),
+            "ParaphraseMLMiniLML12V2" => Ok(EmbeddingModelCfg::ParaphraseMLMiniLML12V2),
+            "ParaphraseMLMiniLML12V2Q" => Ok(EmbeddingModelCfg::ParaphraseMLMiniLML12V2Q),
+            "ParaphraseMLMpnetBaseV2" => Ok(EmbeddingModelCfg::ParaphraseMLMpnetBaseV2),
+            "BGESmallZHV15" => Ok(EmbeddingModelCfg::BGESmallZHV15),
+            "BGELargeZHV15" => Ok(EmbeddingModelCfg::BGELargeZHV15),
+            "ModernBertEmbedLarge" => Ok(EmbeddingModelCfg::ModernBertEmbedLarge),
+            "MultilingualE5Small" => Ok(EmbeddingModelCfg::MultilingualE5Small),
+            "MultilingualE5Base" => Ok(EmbeddingModelCfg::MultilingualE5Base),
+            "MultilingualE5Large" => Ok(EmbeddingModelCfg::MultilingualE5Large),
+            "MxbaiEmbedLargeV1" => Ok(EmbeddingModelCfg::MxbaiEmbedLargeV1),
+            "MxbaiEmbedLargeV1Q" => Ok(EmbeddingModelCfg::MxbaiEmbedLargeV1Q),
+            "GTEBaseENV15" => Ok(EmbeddingModelCfg::GTEBaseENV15),
+            "GTEBaseENV15Q" => Ok(EmbeddingModelCfg::GTEBaseENV15Q),
+            "GTELargeENV15" => Ok(EmbeddingModelCfg::GTELargeENV15),
+            "GTELargeENV15Q" => Ok(EmbeddingModelCfg::GTELargeENV15Q),
+            "ClipVitB32" => Ok(EmbeddingModelCfg::ClipVitB32),
+            "JinaEmbeddingsV2BaseCode" => Ok(EmbeddingModelCfg::JinaEmbeddingsV2BaseCode),
+            _ => Err(format!("Invalid embedding model: {}", s)),
+        }
+    }
+}
+
 
 impl_enum_from!(EmbeddingModelCfg=>EmbeddingModel{
     AllMiniLML6V2,

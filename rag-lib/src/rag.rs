@@ -20,11 +20,8 @@ use langchain_rust::{
 };
 use url::Url;
 
-use std::error::Error;
-use std::pin;
+use std::{pin};
 use std::result::Result;
-
-
 pub struct RAGTrainer {
     store: Box<dyn VectorStore>,
     chunk_size: usize,
@@ -48,13 +45,16 @@ impl RAGTrainer {
         }
     }
 
-    pub async fn train(&self, sources: Vec<String>) -> Result<(), Box<dyn Error>> {
-        let (oks, errors): (Vec<_>, Vec<_>) = join_all(sources.iter().map(|path| async move {
-            return get_docs(&path, self.chunk_size, self.chunk_overlap).await;
-        }))
-        .await
-        .into_iter()
-        .partition(Result::is_ok);
+    pub async fn train(&self, sources: Vec<String>) -> Result<(), AiError> {
+  
+        let chunk_size = self.chunk_size;
+        let chunk_overlap = self.chunk_overlap;
+
+        let tasks = sources.into_iter().map(|src|tokio::spawn(async move {
+            get_docs(&src, chunk_size, chunk_overlap).await
+        }));
+        let (oks,errors):(Vec<_>,Vec<_>) = join_all(tasks).await.into_iter().flatten().partition(Result::is_ok);
+
 
         if errors.len() > 0 {
             let error_msgs: Vec<String> = errors
@@ -63,7 +63,7 @@ impl RAGTrainer {
                 .collect();
             let error_msg = error_msgs.join("\n");
             let error = AiError::new(&error_msg);
-            return Err(Box::new(error));
+            return Err(AiError::new(&format!("{:?}", error)));
         }
 
         // let docs: Vec<Document>
@@ -76,8 +76,8 @@ impl RAGTrainer {
         let opt = &VecStoreOptions::default();
         for chunk_docs in docs.chunks(16) {
             let add_docs_result = self.store.add_documents(&chunk_docs, opt).await;
-            if add_docs_result.is_err() {
-                return Err(add_docs_result.unwrap_err());
+            if let Err(error )=add_docs_result {
+                return Err(AiError::new(&format!("{:?}",error)));
             }
         }
         Ok(())
@@ -93,20 +93,35 @@ impl RAGAssistant {
         use_gpu: bool,
         ollama_url: Option<Url>,
     ) -> Self {
-        let llm = get_llm(model_filename, context_length, use_gpu, 0.0_f32, ollama_url);
+        let llm = get_llm(model_filename, context_length, use_gpu, 0.1_f32, ollama_url);
 
         let prompt = message_formatter![
             fmt_message!(Message::new_system_message(
                 "You are a helpful assistant who always explains things clearly and concisely."
             )),
             fmt_template!(HumanMessagePromptTemplate::new(template_jinja2!(
-                r#"
-        Use the following pieces of context to answer the question at the end. Provide a conversational answer. If you don't know the answer, just say that you don't know, don't try to make up an answer. Cite document filenames and page numbers where applicable.
-        Context:  {{context}}
-        =========
-        Question: {{question}}
-        =========
-        Answer in Markdown: "#,
+                r#"You are an AI assistant helping answer questions based on retrieved document excerpts.
+Use only the information contained in the context below. 
+If the context does not contain enough information, say "I don't know based on the provided documents."
+
+When answering:
+- Write in a clear, conversational tone.
+- Ground every factual claim in the provided context.
+- Cite document filenames and page numbers in parentheses like (filename, p.X).
+- If multiple sources agree, summarize them collectively.
+- Do not speculate or use outside knowledge.
+- Format the response in Markdown for readability.
+
+Context:
+{{context}}
+
+=========
+Question:
+{{question}}
+
+=========
+Answer:
+"#,
                 "context",
                 "question"
             )))

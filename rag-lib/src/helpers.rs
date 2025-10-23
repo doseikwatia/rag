@@ -8,9 +8,8 @@ use langchain_rust::{
 };
 
 use crate::{
-    configuration::{Config, EmbeddingModelCfg}, llama::Llama, utilities::{
-        configuration::StoreType, elasticsearchstore::ElasticsearchStore, errors::AiError,
-        reranker_wrapper::RerankerWrapper,
+    configuration::{Config, EmbeddingModelCfg}, llama2::Llama2, utilities::{
+        configuration::StoreType, elasticsearchstore::ElasticsearchStore, errors::AiError, extractousloader::ExtractousLoader, reranker_wrapper::RerankerWrapper
     }
 };
 use futures_util::future;
@@ -64,12 +63,12 @@ pub async fn get_docs(
     docpath: &str,
     split_size: usize,
     chunk_overlap: usize,
-) -> Result<Vec<Document>, Box<dyn Error>> {
+) -> Result<Vec<Document>, AiError> {
     let path = Path::new(docpath);
     let extension = Path::extension(path);
 
     if extension.is_none() {
-        return Err(Box::new(AiError::new("no extension specified")));
+        return Err(AiError::new("no extension specified"));
     }
     let extension = extension.unwrap_or_default().to_str().unwrap();
     let splitter_options = SplitterOptions::new()
@@ -83,7 +82,7 @@ pub async fn get_docs(
         .to_str()
         .unwrap();
     let filename_key = "filename".to_string();
-
+/* 
     let docs = if extension == "html" {
         HtmlLoader::from_path(path, Url::parse(&format!("file:///{}", docpath)).unwrap())
             .expect("Failed to create html loader")
@@ -111,10 +110,10 @@ pub async fn get_docs(
             .collect::<Vec<_>>()
             .await
     } else if extension == "txt" {
-        let text_content = fs::read_to_string(path)?;
+        let text_content = fs::read_to_string(path).expect("unable to read file");
         let splits = TextLoader::new(text_content)
             .load_and_split(splitter)
-            .await?;
+            .await.expect("unable to load and split");
 
         splits
             .filter(|e| future::ready(e.is_ok()))
@@ -150,6 +149,17 @@ pub async fn get_docs(
             .collect::<Vec<_>>()
             .await
     };
+    */
+    let docs =  ExtractousLoader::new(docpath).load_and_split(splitter)
+            .await
+            .unwrap()
+            .map(|x| {
+                let mut doc = x.expect("unable to get the document");
+                doc.metadata.insert(filename_key.clone(), filename_value.into());
+                doc
+            })
+            .collect::<Vec<_>>()
+            .await;
     Ok(docs)
 }
 
@@ -212,7 +222,7 @@ pub fn get_llm(
                     .with_options(generation_options),
             )
         }
-        None => Box::new(Llama::new(&model, context_length, use_gpu)),
+        None => Box::new(Llama2::new(&model, context_length, use_gpu)),
     };
     llm
 }
