@@ -143,30 +143,30 @@ impl_enum_from!(EmbeddingModelCfg=>EmbeddingModel{
     ClipVitB32,
     JinaEmbeddingsV2BaseCode,
 });
-
+//since this is for local rag we are going to set context size to 256 for all
 impl EmbeddingModelCfg {
     pub fn get_info(&self) -> (i32, usize) {
         match self {
             Self::AllMiniLML6V2 | Self::AllMiniLML6V2Q => (384, 256),
-            Self::AllMiniLML12V2 | Self::AllMiniLML12V2Q => (384, 512),
-            Self::BGEBaseENV15 | Self::BGEBaseENV15Q => (768, 512),
-            Self::BGELargeENV15 | Self::BGELargeENV15Q => (1024, 512),
-            Self::BGESmallENV15 | Self::BGESmallENV15Q => (384, 512),
-            Self::BGESmallZHV15 => (384, 512),
-            Self::BGELargeZHV15 => (1024, 512),
-            Self::NomicEmbedTextV1 => (768, 8192),
-            Self::NomicEmbedTextV15 | Self::NomicEmbedTextV15Q => (768, 8192),
-            Self::ParaphraseMLMiniLML12V2 | Self::ParaphraseMLMiniLML12V2Q => (384, 512),
-            Self::ParaphraseMLMpnetBaseV2 => (768, 512),
-            Self::ModernBertEmbedLarge => (1024, 512),
-            Self::MultilingualE5Small => (384, 512),
-            Self::MultilingualE5Base => (768, 512),
-            Self::MultilingualE5Large => (1024, 512),
-            Self::MxbaiEmbedLargeV1 | Self::MxbaiEmbedLargeV1Q => (1024, 8192),
-            Self::GTEBaseENV15 | Self::GTEBaseENV15Q => (768, 512),
-            Self::GTELargeENV15 | Self::GTELargeENV15Q => (1024, 512),
+            Self::AllMiniLML12V2 | Self::AllMiniLML12V2Q => (384, 256),
+            Self::BGEBaseENV15 | Self::BGEBaseENV15Q => (768, 256),
+            Self::BGELargeENV15 | Self::BGELargeENV15Q => (1024, 256),
+            Self::BGESmallENV15 | Self::BGESmallENV15Q => (384, 256),
+            Self::BGESmallZHV15 => (384, 256),
+            Self::BGELargeZHV15 => (1024, 256),
+            Self::NomicEmbedTextV1 => (768, 256),
+            Self::NomicEmbedTextV15 | Self::NomicEmbedTextV15Q => (768, 256),
+            Self::ParaphraseMLMiniLML12V2 | Self::ParaphraseMLMiniLML12V2Q => (384, 256),
+            Self::ParaphraseMLMpnetBaseV2 => (768, 256),
+            Self::ModernBertEmbedLarge => (1024, 256),
+            Self::MultilingualE5Small => (384, 256),
+            Self::MultilingualE5Base => (768, 256),
+            Self::MultilingualE5Large => (1024, 256),
+            Self::MxbaiEmbedLargeV1 | Self::MxbaiEmbedLargeV1Q => (1024, 256),
+            Self::GTEBaseENV15 | Self::GTEBaseENV15Q => (768, 256),
+            Self::GTELargeENV15 | Self::GTELargeENV15Q => (1024, 256),
             Self::ClipVitB32 => (512, 77),
-            Self::JinaEmbeddingsV2BaseCode => (768, 8192),
+            Self::JinaEmbeddingsV2BaseCode => (768, 256),
         }
     }
 }

@@ -1,16 +1,26 @@
 use langchain_rust::{
     document_loaders::{
         lo_loader::LoPdfLoader, HtmlLoader, InputFormat, Loader, PandocLoader, TextLoader,
-    }, embedding::{FastEmbed, InitOptions, TextEmbedding}, language_models::llm::LLM, llm::client::{GenerationOptions, Ollama, OllamaClient}, schemas::Document, text_splitter::{SplitterOptions, TokenSplitter}, url::Url, vectorstore::{
+    },
+    embedding::{FastEmbed, InitOptions, TextEmbedding},
+    language_models::llm::LLM,
+    llm::client::{GenerationOptions, Ollama, OllamaClient},
+    schemas::Document,
+    text_splitter::{SplitterOptions, TokenSplitter},
+    url::Url,
+    vectorstore::{
         sqlite_vss::{Store, StoreBuilder},
         VectorStore,
-    }
+    },
 };
 
 use crate::{
-    configuration::{Config, EmbeddingModelCfg}, llama2::Llama2, utilities::{
-        configuration::StoreType, elasticsearchstore::ElasticsearchStore, errors::AiError, extractousloader::ExtractousLoader, reranker_wrapper::RerankerWrapper
-    }
+    configuration::{Config, EmbeddingModelCfg},
+    llama2::Llama2,
+    utilities::{
+        configuration::StoreType, elasticsearchstore::ElasticsearchStore, errors::AiError,
+        extractousloader::ExtractousLoader, reranker_wrapper::RerankerWrapper, shared_llm::SharedLLM,
+    },
 };
 use futures_util::future;
 use futures_util::StreamExt;
@@ -36,7 +46,7 @@ pub async fn create_sqlite_store(
         .build()
         .await?;
     store.initialize().await?;
-    let wrapped_store = RerankerWrapper::new(2, store);
+    let wrapped_store = RerankerWrapper::new(10, store);
     Ok(wrapped_store)
 }
 
@@ -55,7 +65,7 @@ pub async fn create_elasticsearch_store(
     let embedder = FastEmbed::from(model);
     let store = ElasticsearchStore::new(urls, api_id, api_key, embedder, vector_dim, index_name);
     store.initialize().await?;
-    let wrapped_store = RerankerWrapper::new(2, store);
+    let wrapped_store = RerankerWrapper::new(10, store);
     Ok(wrapped_store)
 }
 
@@ -82,7 +92,7 @@ pub async fn get_docs(
         .to_str()
         .unwrap();
     let filename_key = "filename".to_string();
-/* 
+    /*
     let docs = if extension == "html" {
         HtmlLoader::from_path(path, Url::parse(&format!("file:///{}", docpath)).unwrap())
             .expect("Failed to create html loader")
@@ -150,16 +160,18 @@ pub async fn get_docs(
             .await
     };
     */
-    let docs =  ExtractousLoader::new(docpath).load_and_split(splitter)
-            .await
-            .unwrap()
-            .map(|x| {
-                let mut doc = x.expect("unable to get the document");
-                doc.metadata.insert(filename_key.clone(), filename_value.into());
-                doc
-            })
-            .collect::<Vec<_>>()
-            .await;
+    let docs = ExtractousLoader::new(docpath)
+        .load_and_split(splitter)
+        .await
+        .unwrap()
+        .map(|x| {
+            let mut doc = x.expect("unable to get the document");
+            doc.metadata
+                .insert(filename_key.clone(), filename_value.into());
+            doc
+        })
+        .collect::<Vec<_>>()
+        .await;
     Ok(docs)
 }
 
@@ -207,22 +219,22 @@ pub fn get_llm(
     use_gpu: bool,
     temperature: f32,
     ollama_url: Option<Url>,
-) -> Box<dyn LLM> {
+) -> SharedLLM {
     let model = model_filename.to_string();
 
-    let llm: Box<dyn LLM> = match ollama_url {
+    let llm: Arc<dyn LLM> = match ollama_url {
         Some(url) => {
             let ollama_client = Arc::new(OllamaClient::from_url(url));
             let generation_options = GenerationOptions::default()
                 .num_ctx(context_length)
                 .temperature(temperature);
-            Box::new(
+            Arc::new(
                 Ollama::new(ollama_client, model_filename, None)
                     .with_model(model_filename)
                     .with_options(generation_options),
             )
         }
-        None => Box::new(Llama2::new(&model, context_length, use_gpu)),
+        None => Arc::new(Llama2::new(&model, context_length, use_gpu)),
     };
-    llm
+    SharedLLM::new(llm)
 }
