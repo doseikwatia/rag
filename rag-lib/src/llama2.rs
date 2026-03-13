@@ -15,7 +15,7 @@ use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::LlamaModel;
-use llama_cpp_2::model::{AddBos, Special};
+use llama_cpp_2::model::AddBos;
 use llama_cpp_2::sampling::LlamaSampler;
 
 use serde_json::Value;
@@ -210,7 +210,7 @@ impl LLM for Llama2 {
                     }
                     // convert token to bytes -> to string
                     let output_bytes = model
-                        .token_to_bytes(token, Special::Tokenize)
+                        .token_to_piece_bytes(token, 64, true, None)
                         .unwrap_or_default();
                     let mut output_string = String::with_capacity(32);
                     let _ = decoder.decode_to_string(&output_bytes, &mut output_string, false);

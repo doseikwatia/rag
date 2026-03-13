@@ -1,7 +1,5 @@
 use langchain_rust::{
-    document_loaders::{
-        lo_loader::LoPdfLoader, HtmlLoader, InputFormat, Loader, PandocLoader, TextLoader,
-    },
+    document_loaders::Loader,
     embedding::{FastEmbed, InitOptions, TextEmbedding},
     language_models::llm::LLM,
     llm::client::{GenerationOptions, Ollama, OllamaClient},
@@ -22,10 +20,10 @@ use crate::{
         extractousloader::ExtractousLoader, reranker_wrapper::RerankerWrapper, shared_llm::SharedLLM,
     },
 };
-use futures_util::future;
+
 use futures_util::StreamExt;
 use std::{error::Error, sync::Arc};
-use std::{fs, path::Path};
+use std::path::Path;
 
 pub async fn create_sqlite_store(
     database: &str,
@@ -80,7 +78,7 @@ pub async fn get_docs(
     if extension.is_none() {
         return Err(AiError::new("no extension specified"));
     }
-    let extension = extension.unwrap_or_default().to_str().unwrap();
+
     let splitter_options = SplitterOptions::new()
         .with_chunk_size(split_size)
         .with_chunk_overlap(chunk_overlap);
@@ -92,74 +90,7 @@ pub async fn get_docs(
         .to_str()
         .unwrap();
     let filename_key = "filename".to_string();
-    /*
-    let docs = if extension == "html" {
-        HtmlLoader::from_path(path, Url::parse(&format!("file:///{}", docpath)).unwrap())
-            .expect("Failed to create html loader")
-            .load_and_split(splitter)
-            .await
-            .unwrap()
-            .map(|x| {
-                let mut doc = x.expect("unable to get the document");
-                doc.metadata.insert(filename_key.clone(), filename_value.into());
-                doc
-            })
-            .collect::<Vec<_>>()
-            .await
-    } else if extension == "pdf" {
-        LoPdfLoader::from_path(path)
-            .expect("failed to get the pdf loader")
-            .load_and_split(splitter)
-            .await
-            .unwrap()
-            .map(|x| {
-                let mut doc = x.expect("unable to get the document");
-                doc.metadata.insert(filename_key.clone(), filename_value.into());
-                doc
-            })
-            .collect::<Vec<_>>()
-            .await
-    } else if extension == "txt" {
-        let text_content = fs::read_to_string(path).expect("unable to read file");
-        let splits = TextLoader::new(text_content)
-            .load_and_split(splitter)
-            .await.expect("unable to load and split");
 
-        splits
-            .filter(|e| future::ready(e.is_ok()))
-            .map(|x| {
-                let mut doc = x.expect("unable to get the document");
-                doc.metadata.insert(filename_key.clone(), filename_value.into());
-                doc
-            })
-            .collect::<Vec<_>>()
-            .await
-    } else {
-        let format = match extension.to_lowercase().as_str() {
-            "html" => InputFormat::Html,
-            "epub" => InputFormat::Epub,
-            "md" => InputFormat::Markdown,
-            "docx" => InputFormat::Docx,
-            "mediawiki" => InputFormat::MediaWiki,
-            "typst" => InputFormat::Typst,
-            _ => InputFormat::RichTextFormat,
-        }
-        .to_string();
-        PandocLoader::from_path(format, path)
-            .await
-            .expect("failed to create PandocLoader")
-            .load_and_split(splitter)
-            .await
-            .unwrap()
-            .map(|x| {
-                let mut doc = x.expect("unable to get the document");
-                doc.metadata.insert(filename_key.clone(), filename_value.into());
-                doc
-            })
-            .collect::<Vec<_>>()
-            .await
-    };
-    */
     let docs = ExtractousLoader::new(docpath)
         .load_and_split(splitter)
         .await

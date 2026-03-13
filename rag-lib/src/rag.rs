@@ -8,7 +8,7 @@ use langchain_rust::chain::{
     self, Chain, ChainError, ConversationalRetrieverChain, ConversationalRetrieverChainBuilder,
     LLMChain, LLMChainBuilder,
 };
-use langchain_rust::language_models::llm::LLM;
+
 use langchain_rust::schemas;
 use langchain_rust::{
     fmt_message, fmt_template,
@@ -21,15 +21,15 @@ use langchain_rust::{
     template_jinja2,
     vectorstore::{Retriever, VecStoreOptions, VectorStore},
 };
-use serde_json::Value;
+
 use url::Url;
 
-use std::collections::HashMap;
-use std::ops::Deref;
+
+
 use std::pin;
-use std::rc::Rc;
+
 use std::result::Result;
-use std::sync::Arc;
+
 pub struct RAGTrainer {
     store: Box<dyn VectorStore>,
     chunk_size: usize,
@@ -101,10 +101,21 @@ impl RAGAssistant {
         context_length: u32,
         retriev_store: Box<dyn VectorStore>,
         retrieve_doc_count: usize,
-        use_gpu: bool,
-        ollama_url: Option<Url>,
+        _use_gpu: bool,
+        _ollama_url: Option<Url>,
     ) -> Self {
-        let llm = get_llm(model_filename, context_length, use_gpu, 0.1_f32, ollama_url);
+        let llm = get_llm(model_filename, context_length, _use_gpu, 0.1_f32, _ollama_url);
+        Self::new_with_llm(
+            retriev_store,
+            retrieve_doc_count,
+            llm,
+        ).await
+    }
+    pub async fn new_with_llm(
+        retriev_store: Box<dyn VectorStore>,
+        retrieve_doc_count: usize,
+        llm: SharedLLM,
+    ) -> Self {
         let title_prompt = message_formatter![
             fmt_message!(Message::new_system_message("You are an assistant that generates concise, descriptive titles for chat conversations, similar to how ChatGPT automatically titles chats.")),
             fmt_template!(HumanMessagePromptTemplate::new(template_jinja2!(r#"Given the first user message below, create a short and clear title (max 6 words) that summarizes what the conversation is likely about. Avoid using punctuation unless necessary. Capitalize main words like a title.
@@ -173,9 +184,7 @@ Answer:
             title_chain,
         }
     }
-    /**
 
-    */
     pub async fn clear(&mut self) {
         let memory = self.retrieval_chain.memory.clone();
         memory.lock().await.clear();
@@ -192,7 +201,7 @@ Answer:
             .unwrap()
             .to_string()
             .trim_matches(|c: char| !c.is_alphanumeric() && c != '_')
-            .trim_start_matches(|c: char|!c.is_uppercase())
+            .trim_start_matches(|c: char| !c.is_uppercase())
             .trim()
             .to_string()
             .trim()
