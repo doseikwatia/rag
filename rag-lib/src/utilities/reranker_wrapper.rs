@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use fastembed::{RerankInitOptions, RerankerModel, TextRerank};
 use langchain_rust::schemas::Document;
 use langchain_rust::vectorstore::{VecStoreOptions, VectorStore};
+use std::cmp::min;
 use std::error::Error;
 
 
@@ -55,7 +56,8 @@ where
                 Document::new((r.document).clone().unwrap()).with_score(r.score as f64)
             })
             .collect();
-        let head: Vec<Document> = reranked[0..k].to_vec();
+        let k_ = min(k, reranked.len());
+        let head: Vec<Document> = reranked[0..k_].to_vec();
         Ok(head)
     }
 }

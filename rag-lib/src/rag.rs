@@ -1,7 +1,7 @@
-use crate::dprintln;
 use crate::helpers::{get_docs, get_llm};
 use crate::utilities::errors::AiError;
 use crate::utilities::shared_llm::SharedLLM;
+use crate::{dprintln, llama2, rag, Llama2};
 use futures_util::future::join_all;
 use futures_util::Stream;
 use langchain_rust::chain::{
@@ -9,6 +9,7 @@ use langchain_rust::chain::{
     LLMChain, LLMChainBuilder,
 };
 
+use langchain_rust::language_models::llm::LLM;
 use langchain_rust::schemas;
 use langchain_rust::{
     fmt_message, fmt_template,
@@ -22,13 +23,10 @@ use langchain_rust::{
     vectorstore::{Retriever, VecStoreOptions, VectorStore},
 };
 
-use url::Url;
-
-
-
 use std::pin;
 
 use std::result::Result;
+
 
 pub struct RAGTrainer {
     store: Box<dyn VectorStore>,
@@ -59,18 +57,31 @@ impl RAGTrainer {
         let chunk_overlap = self.chunk_overlap;
 
         let tasks = sources.into_iter().map(|src| {
-            tokio::spawn(async move { get_docs(&src, chunk_size, chunk_overlap).await })
+            tokio::task::spawn_blocking( move ||get_docs(src, chunk_size, chunk_overlap) )
         });
-        let (oks, errors): (Vec<_>, Vec<_>) = join_all(tasks)
-            .await
-            .into_iter()
-            .flatten()
-            .partition(Result::is_ok);
+
+        let results = join_all(tasks).await;
+
+        let mut oks = Vec::new();
+        let mut errors = Vec::new();
+
+        for res in results {
+            match res {
+                Ok(inner) => match inner.await {
+                    Ok(val) => oks.push(val),
+                    Err(e) => errors.push(e),
+                },
+                Err(join_err) => {
+                    // handle task failure separately
+                    eprintln!("Task failed: {:?}", join_err);
+                }
+            };
+        }
 
         if errors.len() > 0 {
             let error_msgs: Vec<String> = errors
                 .into_iter()
-                .map(|e| format!("{}", e.unwrap_err()))
+                .map(|e| format!("{}", e))
                 .collect();
             let error_msg = error_msgs.join("\n");
             let error = AiError::new(&error_msg);
@@ -80,7 +91,7 @@ impl RAGTrainer {
         // let docs: Vec<Document>
         let docs: Vec<Document> = oks
             .into_iter()
-            .map(|i| i.unwrap()) // Convert from Vec<Vec<Document>> to Iterator<Vec<Document>>
+            .map(|i| i) // Convert from Vec<Vec<Document>> to Iterator<Vec<Document>>
             .flat_map(|doc_vec| doc_vec) // Flatten the Iterator<Vec<Document>> into Iterator<Document>
             .collect();
 
@@ -97,40 +108,32 @@ impl RAGTrainer {
 
 impl RAGAssistant {
     pub async fn new(
-        model_filename: &str,
-        context_length: u32,
+        title_model: &str,
+        rag_model: &str,
+        title_context_length: u32,
+        rag_context_length: u32,
         retriev_store: Box<dyn VectorStore>,
         retrieve_doc_count: usize,
         _use_gpu: bool,
-        _ollama_url: Option<Url>,
     ) -> Self {
-        let llm = get_llm(model_filename, context_length, _use_gpu, 0.1_f32, _ollama_url);
-        Self::new_with_llm(
-            retriev_store,
-            retrieve_doc_count,
-            llm,
-        ).await
+        let title_llm: Box<dyn LLM>= Box::new(Llama2::new(title_model, title_context_length, _use_gpu));
+        let rag_llm: Box<dyn LLM>= Box::new(Llama2::new(rag_model, rag_context_length, _use_gpu));
+        
+        Self::new_with_llm(retriev_store, retrieve_doc_count, title_llm, rag_llm).await
     }
-    pub async fn new_with_llm(
+    pub async fn new_with_llm<L: Into<Box<dyn LLM>>>(
         retriev_store: Box<dyn VectorStore>,
         retrieve_doc_count: usize,
-        llm: SharedLLM,
+        title_llm: L,
+        rag_llm: L,
     ) -> Self {
         let title_prompt = message_formatter![
-            fmt_message!(Message::new_system_message("You are an assistant that generates concise, descriptive titles for chat conversations, similar to how ChatGPT automatically titles chats.")),
-            fmt_template!(HumanMessagePromptTemplate::new(template_jinja2!(r#"Given the first user message below, create a short and clear title (max 6 words) that summarizes what the conversation is likely about. Avoid using punctuation unless necessary. Capitalize main words like a title.
-
-            Example:
-
-            Message: "Explain how transformers work in NLP" → Title: "How Transformers Work in NLP"
-
-            Message: "Give me a Python regex to extract IPs" → Title: "Regex for Extracting IP Addresses"
-            
-            User’s first message:
-            {{message}}
-
-            Title:
-            "#,"message")))
+            fmt_message!(Message::new_system_message(
+                "Generate a short title for a message in 1 sentence. Stop when done"
+            )),
+            fmt_template!(HumanMessagePromptTemplate::new(template_jinja2!(r#"
+        Message: "{{message}}"
+        Title:"#,"message")))
         ];
         let retrieval_prompt = message_formatter![
             fmt_message!(Message::new_system_message(
@@ -165,14 +168,14 @@ Answer:
         ];
 
         let title_chain = LLMChainBuilder::new()
-            .llm(llm.clone())
+            .llm(title_llm)
             .prompt(title_prompt)
             .build()
             .expect("Error building title chain");
 
         let memory = WindowBufferMemory::new(1);
         let retrieval_chain = ConversationalRetrieverChainBuilder::new()
-            .llm(llm.clone())
+            .llm(rag_llm)
             .rephrase_question(true)
             .memory(memory.into())
             .retriever(Retriever::new(retriev_store, retrieve_doc_count))

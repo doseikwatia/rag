@@ -1,4 +1,4 @@
-use std::{pin::Pin, sync::Arc};
+use std::{pin::Pin, rc::Rc, sync::Arc};
 
 use async_trait::async_trait;
 use futures_util::Stream;
@@ -13,7 +13,7 @@ pub struct SharedLLM {
 }
 
 impl SharedLLM {
-    pub fn new(model :Arc<dyn LLM>)->Self{
+    pub fn new(model:Arc<dyn LLM>)->Self{
         Self{model}
     }
 }

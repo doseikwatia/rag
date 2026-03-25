@@ -1,7 +1,7 @@
 use std::{io::Read, path::Path, pin::Pin};
 
 use async_trait::async_trait;
-use extractous::Extractor;
+use extractous::{Extractor, PdfOcrStrategy, PdfParserConfig, TesseractOcrConfig};
 use futures_util::{stream, Stream, StreamExt};
 
 use langchain_rust::{
@@ -22,8 +22,10 @@ impl ExtractousLoader {
             path: path.to_string(),
         }
     }
-    pub fn from_path(path: &Path)->Self{
-        Self {path:path.to_str().unwrap().to_string()}
+    pub fn from_path(path: &Path) -> Self {
+        Self {
+            path: path.to_str().unwrap().to_string(),
+        }
     }
 }
 
@@ -35,7 +37,9 @@ impl Loader for ExtractousLoader {
         Pin<Box<dyn Stream<Item = Result<Document, LoaderError>> + Send + 'static>>,
         LoaderError,
     > {
-        let extractor = Extractor::new();
+        let extractor = Extractor::new()
+            .set_ocr_config(TesseractOcrConfig::new().set_language("eng"))
+            .set_pdf_config(PdfParserConfig::new().set_ocr_strategy(PdfOcrStrategy::OCR_ONLY));
         let (mut content_stream, metadata) = extractor
             .extract_file(&self.path)
             .map_err(|err| LoaderError::LoadDocumentError(err.to_string()))?;

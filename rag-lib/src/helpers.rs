@@ -68,11 +68,11 @@ pub async fn create_elasticsearch_store(
 }
 
 pub async fn get_docs(
-    docpath: &str,
+    docpath: String,
     split_size: usize,
     chunk_overlap: usize,
 ) -> Result<Vec<Document>, AiError> {
-    let path = Path::new(docpath);
+    let path = Path::new(&docpath);
     let extension = Path::extension(path);
 
     if extension.is_none() {
@@ -91,7 +91,7 @@ pub async fn get_docs(
         .unwrap();
     let filename_key = "filename".to_string();
 
-    let docs = ExtractousLoader::new(docpath)
+    let docs = ExtractousLoader::new(&docpath)
         .load_and_split(splitter)
         .await
         .unwrap()
@@ -159,13 +159,13 @@ pub fn get_llm(
             let generation_options = GenerationOptions::default()
                 .num_ctx(context_length)
                 .temperature(temperature);
-            Arc::new(
-                Ollama::new(ollama_client, model_filename, None)
+         
+                Arc::new(Ollama::new(ollama_client, model_filename, None)
                     .with_model(model_filename)
-                    .with_options(generation_options),
-            )
+                    .with_options(generation_options))
+            
         }
-        None => Arc::new(Llama2::new(&model, context_length, use_gpu)),
+        None => Arc::new(Llama2::new(&model, context_length, use_gpu))
     };
     SharedLLM::new(llm)
 }

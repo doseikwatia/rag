@@ -7,3 +7,4 @@ pub mod utilities;
 pub use helpers::{create_elasticsearch_store, create_sqlite_store,get_store};
 pub use utilities::configuration;
 pub use llama2::Llama2;
+pub use langchain_rust::language_models::llm::LLM;

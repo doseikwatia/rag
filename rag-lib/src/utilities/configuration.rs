@@ -4,7 +4,7 @@ use crate::impl_enum_from;
 use fastembed::EmbeddingModel;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone,Copy)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum EmbeddingModelCfg {
     /// sentence-transformers/all-MiniLM-L6-v2
@@ -69,7 +69,6 @@ pub enum EmbeddingModelCfg {
     JinaEmbeddingsV2BaseCode,
 }
 
-
 impl FromStr for EmbeddingModelCfg {
     type Err = String;
 
@@ -110,7 +109,6 @@ impl FromStr for EmbeddingModelCfg {
     }
 }
 
-
 impl_enum_from!(EmbeddingModelCfg=>EmbeddingModel{
     AllMiniLML6V2,
     AllMiniLML6V2Q,
@@ -147,26 +145,26 @@ impl_enum_from!(EmbeddingModelCfg=>EmbeddingModel{
 impl EmbeddingModelCfg {
     pub fn get_info(&self) -> (i32, usize) {
         match self {
-            Self::AllMiniLML6V2 | Self::AllMiniLML6V2Q => (384, 256),
-            Self::AllMiniLML12V2 | Self::AllMiniLML12V2Q => (384, 256),
-            Self::BGEBaseENV15 | Self::BGEBaseENV15Q => (768, 256),
-            Self::BGELargeENV15 | Self::BGELargeENV15Q => (1024, 256),
-            Self::BGESmallENV15 | Self::BGESmallENV15Q => (384, 256),
-            Self::BGESmallZHV15 => (384, 256),
-            Self::BGELargeZHV15 => (1024, 256),
-            Self::NomicEmbedTextV1 => (768, 256),
-            Self::NomicEmbedTextV15 | Self::NomicEmbedTextV15Q => (768, 256),
-            Self::ParaphraseMLMiniLML12V2 | Self::ParaphraseMLMiniLML12V2Q => (384, 256),
-            Self::ParaphraseMLMpnetBaseV2 => (768, 256),
-            Self::ModernBertEmbedLarge => (1024, 256),
-            Self::MultilingualE5Small => (384, 256),
-            Self::MultilingualE5Base => (768, 256),
-            Self::MultilingualE5Large => (1024, 256),
-            Self::MxbaiEmbedLargeV1 | Self::MxbaiEmbedLargeV1Q => (1024, 256),
-            Self::GTEBaseENV15 | Self::GTEBaseENV15Q => (768, 256),
-            Self::GTELargeENV15 | Self::GTELargeENV15Q => (1024, 256),
+            Self::AllMiniLML6V2 | Self::AllMiniLML6V2Q => (384, 512),
+            Self::AllMiniLML12V2 | Self::AllMiniLML12V2Q => (384, 512),
+            Self::BGEBaseENV15 | Self::BGEBaseENV15Q => (768, 512),
+            Self::BGELargeENV15 | Self::BGELargeENV15Q => (1024, 512),
+            Self::BGESmallENV15 | Self::BGESmallENV15Q => (384, 512),
+            Self::BGESmallZHV15 => (384, 512),
+            Self::BGELargeZHV15 => (1024, 512),
+            Self::NomicEmbedTextV1 => (768, 512),
+            Self::NomicEmbedTextV15 | Self::NomicEmbedTextV15Q => (768, 512),
+            Self::ParaphraseMLMiniLML12V2 | Self::ParaphraseMLMiniLML12V2Q => (384, 512),
+            Self::ParaphraseMLMpnetBaseV2 => (768, 512),
+            Self::ModernBertEmbedLarge => (1024, 512),
+            Self::MultilingualE5Small => (384, 512),
+            Self::MultilingualE5Base => (768, 512),
+            Self::MultilingualE5Large => (1024, 512),
+            Self::MxbaiEmbedLargeV1 | Self::MxbaiEmbedLargeV1Q => (1024, 1024),
+            Self::GTEBaseENV15 | Self::GTEBaseENV15Q => (768, 1024),
+            Self::GTELargeENV15 | Self::GTELargeENV15Q => (1024, 1024),
             Self::ClipVitB32 => (512, 77),
-            Self::JinaEmbeddingsV2BaseCode => (768, 256),
+            Self::JinaEmbeddingsV2BaseCode => (768, 8192),
         }
     }
 }
@@ -241,5 +239,5 @@ pub struct Config {
     pub ollama_url: String,
     #[serde(default = "default_embedding_model")]
     pub embedding_model: EmbeddingModelCfg,
-    pub threatfox_api_key: String
+    pub threatfox_api_key: String,
 }
