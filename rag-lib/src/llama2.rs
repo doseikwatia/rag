@@ -1,6 +1,4 @@
-use std::{
-    num::NonZeroU32, path::PathBuf, pin::Pin, str::FromStr, sync::OnceLock,
-};
+use std::{num::NonZeroU32, path::PathBuf, pin::Pin, str::FromStr, sync::OnceLock};
 
 use crate::dprintln;
 use async_trait::async_trait;
@@ -14,8 +12,8 @@ use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
-use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::model::AddBos;
+use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::sampling::LlamaSampler;
 
 use serde_json::Value;
@@ -32,13 +30,24 @@ fn llama_backend() -> &'static LlamaBackend {
 pub struct Llama2 {
     model: Arc<LlamaModel>,
     n_ctx: u32,
+    n_len: u32,
+    temperature: f32,
+    top_k: i32,
+    top_p: f32,
+    min_keep: usize,
 }
 
 impl Llama2 {
-    pub fn new(model_filename: &str, n_ctx: u32, use_gpu: bool) -> Self {
+    pub fn new(model_filename: &str, use_gpu: bool) -> Self {
+        let n_ctx: u32 = 1024;
+        let n_len: u32 = 512;
+        let temperature: f32 = 0.1;
+        let top_k: i32 = 10;
+        let top_p: f32 = 0.9;
+        let min_keep: usize = 3;
         let model_params = LlamaModelParams::default()
             .with_n_gpu_layers(match use_gpu {
-                true => 99999,
+                true => 32,
                 false => 0,
             })
             .with_use_mlock(true)
@@ -52,14 +61,50 @@ impl Llama2 {
         let model_path_buf =
             PathBuf::from_str(model_filename).expect("failed to create model path buff");
         let model_path = model_path_buf.as_path();
-        let model = LlamaModel::load_from_file(&backend, model_path, &model_params)
-            .expect("Could not load model");
+        let model = Arc::new(
+            LlamaModel::load_from_file(&backend, model_path, &model_params)
+                .expect("Could not load model"),
+        );
 
-        // let n_ctx = model.n_ctx_train() as u32;
         Self {
-            model: Arc::new(model),
-            n_ctx: n_ctx,
+            model,
+            n_ctx,
+            n_len,
+            temperature,
+            top_k,
+            top_p,
+            min_keep,
         }
+    }
+
+    pub fn with_ctx(mut self, n_ctx: u32) -> Self {
+        self.n_ctx = n_ctx;
+        self
+    }
+
+    pub fn with_len(mut self, n_len: u32) -> Self {
+        self.n_len = n_len;
+        self
+    }
+
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temperature = temperature;
+        self
+    }
+
+    pub fn with_top_k(mut self, top_k: i32) -> Self {
+        self.top_k = top_k;
+        self
+    }
+
+    pub fn with_top_p(mut self, top_p: f32) -> Self {
+        self.top_p = top_p;
+        self
+    }
+
+    pub fn with_min_keep(mut self, min_keep: usize) -> Self {
+        self.min_keep = min_keep;
+        self
     }
 }
 
@@ -99,13 +144,22 @@ impl LLM for Llama2 {
         let prompt = chat.join(". ");
 
         // tokio channel for streaming out tokens
-        let (tx, rx) = tokio::sync::mpsc::channel(10);
+        let (tx, rx) = tokio::sync::mpsc::channel(128);
 
         // clones we will move into the blocking closure (must be Send)
         let model = Arc::clone(&self.model);
         let backend = llama_backend();
         let n_ctx = self.n_ctx; // plain integer — Send
+        let n_len = self.n_len;
         let prompt_clone = prompt.clone();
+        let n_threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1) as i32;
+        //sampling parameters
+        let temperature: f32 = self.temperature;
+        let top_k: i32 = self.top_k;
+        let top_p: f32 = self.top_p;
+        let min_keep: usize = self.min_keep;
 
         // Tokenize prompt on the async thread (safe)
         let tokens_list = model
@@ -119,8 +173,10 @@ impl LLM for Llama2 {
             // Create context inside the blocking thread — **important**:
             // context is created & used on the SAME thread so it doesn't cross threads.
             let ctx_params =
-                LlamaContextParams::default().with_n_ctx(Some(NonZeroU32::new(n_ctx).unwrap()));
-
+                LlamaContextParams::default().with_n_ctx(Some(NonZeroU32::new(n_ctx).unwrap()))
+                .with_n_threads(n_threads)
+                .with_n_threads_batch(n_threads*2);
+                
             let mut ctx = match model.new_context(&backend, ctx_params) {
                 Ok(c) => c,
                 Err(err) => {
@@ -133,26 +189,18 @@ impl LLM for Llama2 {
             };
 
             // sanity checks that require ctx values (now that ctx exists)
-            let n_cxt = ctx.n_ctx() as i32;
-            let n_len: i32 = n_cxt * 9 / 10; // TODO: accept as input
+            let n_ctx = ctx.n_ctx() as i32;
             let tokens_len = tokens_list.len() as i32;
-            let n_kv_req = tokens_len + (n_len - tokens_len);
+            let n_len = n_len as i32;
 
             dprintln!(
-                "n_ctx:{:?}, n_len:{:?}, n_kv_req: {:?}, tokens_len: {:?}",
+                "n_ctx:{:?}, n_len:{:?}, tokens_len: {:?}",
                 n_ctx,
                 n_len,
-                n_kv_req,
                 tokens_len
             );
 
-            if n_kv_req > n_cxt {
-                let _ = tx.blocking_send(Err(LLMError::OtherError(
-                "n_kv_req > n_ctx, the required kv cache size is not big enough; either reduce n_len or increase n_ctx".to_string(),
-            )));
-                return;
-            }
-
+            //this should be a warning
             if tokens_len >= n_len {
                 let _ = tx.blocking_send(Err(LLMError::OtherError(
                     "the prompt is too long, it has more tokens than n_len".to_string(),
@@ -165,10 +213,10 @@ impl LLM for Llama2 {
             let mut batch = LlamaBatch::new(max_batch_len, 1);
             let sequences = tokens_list.chunks(max_batch_len);
 
-            for (seq_num, sequence) in sequences.enumerate() {
+            let mut pos = 0;
+            for sequence in sequences {
                 batch.clear();
-                for (tkn_num, token) in sequence.iter().enumerate() {
-                    let pos = ((seq_num * max_batch_len) + tkn_num).try_into().unwrap();
+                for token in sequence {
                     let is_last = pos == tokens_len - 1;
                     if let Err(err) = batch.add(*token, pos, &[0], is_last) {
                         let _ = tx.blocking_send(Err(LLMError::OtherError(format!(
@@ -177,6 +225,7 @@ impl LLM for Llama2 {
                         ))));
                         return;
                     }
+                    pos += 1;
                 }
 
                 if let Err(err) = ctx.decode(&mut batch) {
@@ -195,11 +244,15 @@ impl LLM for Llama2 {
 
             let seed: Option<u32> = None; // TODO: accept as input
             let mut sampler = LlamaSampler::chain_simple([
+                LlamaSampler::top_k(top_k),
+                LlamaSampler::top_p(top_p, min_keep),
+                LlamaSampler::temp(temperature),
                 LlamaSampler::dist(seed.unwrap_or(1234)),
-                LlamaSampler::greedy(),
             ]);
 
-            while n_cur <= n_len {
+            let max_gen = n_len;
+            let max_total = (tokens_len + max_gen).min(n_ctx);
+            while n_cur <= max_total {
                 // sample next token using ctx and batch state
                 {
                     let token = sampler.sample(&ctx, sample_pos);

@@ -1,30 +1,22 @@
 use std::sync::Arc;
 
 use langchain_rust::{
-    agent::{AgentExecutor, ConversationalAgent, ConversationalAgentBuilder},
-    chain::{options::ChainCallOptions, Chain, ChainError},
-    memory::SimpleMemory,
-    prompt_args,
-    tools::Tool,
+    agent::{AgentExecutor, ConversationalAgent, ConversationalAgentBuilder}, chain::{Chain, ChainError, options::ChainCallOptions}, language_models::llm::LLM, memory::SimpleMemory, prompt_args, tools::Tool
 };
 use url::Url;
 
-use crate::{dprintln, helpers::get_llm, utilities::threatfox_tool::ThreatFoxTool};
+use crate::{dprintln, utilities::threatfox_tool::ThreatFoxTool};
 
 pub struct RagAgent {
     executor: AgentExecutor<ConversationalAgent>,
 }
 
 impl RagAgent {
-    pub fn new(
-        model_filename: &str,
-        context_length: u32,
-        use_gpu: bool,
-        ollama_url: Option<Url>,
+    pub fn new<L:Into<Box<dyn LLM>>>(
+        llm:L,
         threatfox_api_key: &str
     ) -> Self {
         let memory = SimpleMemory::new();
-        let llm = get_llm(model_filename, context_length, use_gpu, 0.4_f32, ollama_url);
         let threatfox_tool =  ThreatFoxTool::new(&threatfox_api_key);
         
         let tools: &[Arc<dyn Tool>] = &[Arc::new(threatfox_tool)];

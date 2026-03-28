@@ -144,28 +144,29 @@ pub async fn get_store(config: &Config) -> Box<dyn VectorStore> {
 }
 
 
-pub fn get_llm(
-    model_filename: &str,
-    context_length: u32,
-    use_gpu: bool,
-    temperature: f32,
-    ollama_url: Option<Url>,
-) -> SharedLLM {
-    let model = model_filename.to_string();
+// pub fn get_llm(
+//     model_filename: &str,
+//     context_length: u32,
+//     gen_length:u32,
+//     use_gpu: bool,
+//     temperature: f32,
+//     ollama_url: Option<Url>,
+// ) -> SharedLLM {
+//     let model = model_filename.to_string();
 
-    let llm: Arc<dyn LLM> = match ollama_url {
-        Some(url) => {
-            let ollama_client = Arc::new(OllamaClient::from_url(url));
-            let generation_options = GenerationOptions::default()
-                .num_ctx(context_length)
-                .temperature(temperature);
+//     let llm: Arc<dyn LLM> = match ollama_url {
+//         Some(url) => {
+//             let ollama_client = Arc::new(OllamaClient::from_url(url));
+//             let generation_options = GenerationOptions::default()
+//                 .num_ctx(context_length)
+//                 .temperature(temperature);
          
-                Arc::new(Ollama::new(ollama_client, model_filename, None)
-                    .with_model(model_filename)
-                    .with_options(generation_options))
+//                 Arc::new(Ollama::new(ollama_client, model_filename, None)
+//                     .with_model(model_filename)
+//                     .with_options(generation_options))
             
-        }
-        None => Arc::new(Llama2::new(&model, context_length, use_gpu))
-    };
-    SharedLLM::new(llm)
-}
+//         }
+//         None => Arc::new(Llama2::new(&model, context_length, gen_length,use_gpu))
+//     };
+//     SharedLLM::new(llm)
+// }

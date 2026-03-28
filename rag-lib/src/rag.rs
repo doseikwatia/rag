@@ -1,7 +1,6 @@
-use crate::helpers::{get_docs, get_llm};
+use crate::dprintln;
+use crate::helpers::get_docs; //get_llm
 use crate::utilities::errors::AiError;
-use crate::utilities::shared_llm::SharedLLM;
-use crate::{dprintln, llama2, rag, Llama2};
 use futures_util::future::join_all;
 use futures_util::Stream;
 use langchain_rust::chain::{
@@ -27,15 +26,10 @@ use std::pin;
 
 use std::result::Result;
 
-
 pub struct RAGTrainer {
     store: Box<dyn VectorStore>,
     chunk_size: usize,
     chunk_overlap: usize,
-}
-pub struct RAGAssistant {
-    retrieval_chain: ConversationalRetrieverChain,
-    title_chain: LLMChain,
 }
 
 impl RAGTrainer {
@@ -57,7 +51,7 @@ impl RAGTrainer {
         let chunk_overlap = self.chunk_overlap;
 
         let tasks = sources.into_iter().map(|src| {
-            tokio::task::spawn_blocking( move ||get_docs(src, chunk_size, chunk_overlap) )
+            tokio::task::spawn_blocking(move || get_docs(src, chunk_size, chunk_overlap))
         });
 
         let results = join_all(tasks).await;
@@ -79,10 +73,7 @@ impl RAGTrainer {
         }
 
         if errors.len() > 0 {
-            let error_msgs: Vec<String> = errors
-                .into_iter()
-                .map(|e| format!("{}", e))
-                .collect();
+            let error_msgs: Vec<String> = errors.into_iter().map(|e| format!("{}", e)).collect();
             let error_msg = error_msgs.join("\n");
             let error = AiError::new(&error_msg);
             return Err(AiError::new(&format!("{:?}", error)));
@@ -106,19 +97,19 @@ impl RAGTrainer {
     }
 }
 
+pub struct RAGAssistant {
+    retrieval_chain: ConversationalRetrieverChain,
+    title_chain: LLMChain,
+}
+
 impl RAGAssistant {
-    pub async fn new(
-        title_model: &str,
-        rag_model: &str,
-        title_context_length: u32,
-        rag_context_length: u32,
+    pub async fn new<L: Into<Box<dyn LLM>>>(
+        title_llm: L,
+        rag_llm: L,
         retriev_store: Box<dyn VectorStore>,
         retrieve_doc_count: usize,
         _use_gpu: bool,
     ) -> Self {
-        let title_llm: Box<dyn LLM>= Box::new(Llama2::new(title_model, title_context_length, _use_gpu));
-        let rag_llm: Box<dyn LLM>= Box::new(Llama2::new(rag_model, rag_context_length, _use_gpu));
-        
         Self::new_with_llm(retriev_store, retrieve_doc_count, title_llm, rag_llm).await
     }
     pub async fn new_with_llm<L: Into<Box<dyn LLM>>>(
@@ -131,35 +122,36 @@ impl RAGAssistant {
             fmt_message!(Message::new_system_message(
                 "Generate a short title for a message in 1 sentence. Stop when done"
             )),
-            fmt_template!(HumanMessagePromptTemplate::new(template_jinja2!(r#"
+            fmt_template!(HumanMessagePromptTemplate::new(template_jinja2!(
+                r#"
         Message: "{{message}}"
-        Title:"#,"message")))
+        Title:"#,
+                "message"
+            )))
         ];
         let retrieval_prompt = message_formatter![
             fmt_message!(Message::new_system_message(
-                "You are a helpful assistant who always explains things clearly and concisely."
+                r#"You are a question-answering assistant that uses only provided context.
+
+Rules:
+- Use only the given context. Do not use outside knowledge.
+- If the answer is not in the context, say: "I don't know based on the provided documents."
+- Do not speculate or infer beyond the text.
+- Every factual statement must include a citation in the format (filename, p.X).
+- Do not fabricate citations.
+
+Style:
+- Be clear, concise, and conversational.
+- Use Markdown for readability.
+- Avoid unnecessary verbosity."#
             )),
             fmt_template!(HumanMessagePromptTemplate::new(template_jinja2!(
-                r#"You are an AI assistant helping answer questions based on retrieved document excerpts.
-Use only the information contained in the context below. 
-If the context does not contain enough information, say "I don't know based on the provided documents."
-
-When answering:
-- Write in a clear, conversational tone.
-- Ground every factual claim in the provided context.
-- Cite document filenames and page numbers in parentheses like (filename, p.X).
-- If multiple sources agree, summarize them collectively.
-- Do not speculate or use outside knowledge.
-- Format the response in Markdown for readability.
-
-Context:
+                r#"Context:
 {{context}}
 
-=========
 Question:
 {{question}}
 
-=========
 Answer:
 "#,
                 "context",
