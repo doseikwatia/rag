@@ -103,20 +103,17 @@ pub struct RAGAssistant {
 }
 
 impl RAGAssistant {
-    pub async fn new<L: Into<Box<dyn LLM>>>(
-        title_llm: L,
-        rag_llm: L,
+    pub async fn new<L: Clone+Into<Box<dyn LLM>>>(
+        llm: L,
         retriev_store: Box<dyn VectorStore>,
         retrieve_doc_count: usize,
-        _use_gpu: bool,
     ) -> Self {
-        Self::new_with_llm(retriev_store, retrieve_doc_count, title_llm, rag_llm).await
+        Self::new_with_llm(retriev_store, retrieve_doc_count, llm).await
     }
-    pub async fn new_with_llm<L: Into<Box<dyn LLM>>>(
+    pub async fn new_with_llm<L: Clone+Into<Box<dyn LLM>>>(
         retriev_store: Box<dyn VectorStore>,
         retrieve_doc_count: usize,
-        title_llm: L,
-        rag_llm: L,
+        llm: L,
     ) -> Self {
         let title_prompt = message_formatter![
             fmt_message!(Message::new_system_message(
@@ -160,14 +157,14 @@ Answer:
         ];
 
         let title_chain = LLMChainBuilder::new()
-            .llm(title_llm)
+            .llm(llm.clone())
             .prompt(title_prompt)
             .build()
             .expect("Error building title chain");
 
         let memory = WindowBufferMemory::new(1);
         let retrieval_chain = ConversationalRetrieverChainBuilder::new()
-            .llm(rag_llm)
+            .llm(llm)
             .rephrase_question(true)
             .memory(memory.into())
             .retriever(Retriever::new(retriev_store, retrieve_doc_count))

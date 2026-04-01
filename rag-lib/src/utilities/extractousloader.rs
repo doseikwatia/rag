@@ -1,4 +1,9 @@
-use std::{io::Read, path::Path, pin::Pin};
+use std::{
+    collections::{self, HashMap},
+    io::Read,
+    path::Path,
+    pin::Pin,
+};
 
 use async_trait::async_trait;
 use extractous::{Extractor, PdfOcrStrategy, PdfParserConfig, TesseractOcrConfig};
@@ -45,7 +50,7 @@ impl Loader for ExtractousLoader {
             .map_err(|err| LoaderError::LoadDocumentError(err.to_string()))?;
         let mut buf = String::new();
         content_stream.read_to_string(&mut buf);
-        let doc_metadata = metadata
+        let doc_metadata: HashMap<String, Value> = metadata
             .into_iter()
             .map(|(key, value)| {
                 (
@@ -84,7 +89,7 @@ pub(crate) async fn process_doc_stream<TS: TextSplitter + 'static>(
                 Ok(doc) => {
                     match splitter.split_documents(&[doc]).await {
                         Ok(docs) => {
-                            for doc in docs {
+                            for  doc in docs {
                                 yield Ok(doc);
                             }
                         },

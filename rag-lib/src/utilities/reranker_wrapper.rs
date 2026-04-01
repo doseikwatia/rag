@@ -5,25 +5,28 @@ use langchain_rust::vectorstore::{VecStoreOptions, VectorStore};
 use std::cmp::min;
 use std::error::Error;
 
-
 pub struct RerankerWrapper<V>
 where
     V: VectorStore,
 {
     store: V,
     model: TextRerank,
-    limit_factor:usize
+    limit_factor: usize,
 }
 
 impl<V> RerankerWrapper<V>
 where
     V: VectorStore,
 {
-    pub fn new(limit_factor:usize,store: V,) -> Self {
+    pub fn new(limit_factor: usize, store: V) -> Self {
         let init_opt = RerankInitOptions::new(RerankerModel::BGERerankerBase)
             .with_show_download_progress(true);
         let model = TextRerank::try_new(init_opt).unwrap();
-        RerankerWrapper { store, model,limit_factor}
+        RerankerWrapper {
+            store,
+            model,
+            limit_factor,
+        }
     }
 }
 #[async_trait]
@@ -45,16 +48,21 @@ where
         k: usize,
         opt: &VecStoreOptions,
     ) -> Result<Vec<Document>, Box<dyn Error>> {
-        let docs = self.store.similarity_search(query, k*self.limit_factor, opt).await?;
-        let doc_content = docs.iter().map(|d| d.page_content.as_str()).collect();
+        let docs = self
+            .store
+            .similarity_search(query, k * self.limit_factor, opt)
+            .await?;
+        //have metadata in documents so that models can effectively reference it in response documents
+        let docs: Vec<&str> = docs
+            .iter()
+            .map(|d| d.page_content.as_str())
+            .collect();
         // Optionally rerank with embedder/model
         let reranked: Vec<Document> = self
             .model
-            .rerank(query, doc_content, true, Some(k))?
+            .rerank(query, docs, true, Some(k))?
             .iter()
-            .map(|r| {
-                Document::new((r.document).clone().unwrap()).with_score(r.score as f64)
-            })
+            .map(|r| Document::new((r.document).clone().unwrap()).with_score(r.score as f64))
             .collect();
         let k_ = min(k, reranked.len());
         let head: Vec<Document> = reranked[0..k_].to_vec();

@@ -31,23 +31,25 @@ pub struct Llama2 {
     model: Arc<LlamaModel>,
     n_ctx: u32,
     n_len: u32,
-    temperature: f32,
-    top_k: i32,
-    top_p: f32,
-    min_keep: usize,
+    seed: Option<u32>,
+    temperature: Option<f32>,
+    top_k: Option<i32>,
+    top_p: Option<f32>,
+    min_keep: Option<usize>,
 }
 
 impl Llama2 {
     pub fn new(model_filename: &str, use_gpu: bool) -> Self {
         let n_ctx: u32 = 1024;
         let n_len: u32 = 512;
-        let temperature: f32 = 0.1;
-        let top_k: i32 = 10;
-        let top_p: f32 = 0.9;
-        let min_keep: usize = 3;
+        let temperature = None;
+        let top_k = None;
+        let top_p = None;
+        let min_keep = None;
+        let seed = None;
         let model_params = LlamaModelParams::default()
             .with_n_gpu_layers(match use_gpu {
-                true => 32,
+                true => 128,
                 false => 0,
             })
             .with_use_mlock(true)
@@ -70,6 +72,7 @@ impl Llama2 {
             model,
             n_ctx,
             n_len,
+            seed,
             temperature,
             top_k,
             top_p,
@@ -88,22 +91,22 @@ impl Llama2 {
     }
 
     pub fn with_temperature(mut self, temperature: f32) -> Self {
-        self.temperature = temperature;
+        self.temperature = Some(temperature);
         self
     }
 
     pub fn with_top_k(mut self, top_k: i32) -> Self {
-        self.top_k = top_k;
+        self.top_k = Some(top_k);
         self
     }
 
-    pub fn with_top_p(mut self, top_p: f32) -> Self {
-        self.top_p = top_p;
+    pub fn with_top_p(mut self, top_p: f32, min_keep: usize) -> Self {
+        self.top_p = Some(top_p);
+        self.min_keep = Some(min_keep);
         self
     }
-
-    pub fn with_min_keep(mut self, min_keep: usize) -> Self {
-        self.min_keep = min_keep;
+    pub fn with_seed(mut self, seed: u32) -> Self {
+        self.seed = Some(seed);
         self
     }
 }
@@ -156,10 +159,11 @@ impl LLM for Llama2 {
             .map(|n| n.get())
             .unwrap_or(1) as i32;
         //sampling parameters
-        let temperature: f32 = self.temperature;
-        let top_k: i32 = self.top_k;
-        let top_p: f32 = self.top_p;
-        let min_keep: usize = self.min_keep;
+        let seed = self.seed;
+        let temperature = self.temperature;
+        let top_k = self.top_k;
+        let top_p = self.top_p;
+        let min_keep = self.min_keep;
 
         // Tokenize prompt on the async thread (safe)
         let tokens_list = model
@@ -172,11 +176,11 @@ impl LLM for Llama2 {
 
             // Create context inside the blocking thread — **important**:
             // context is created & used on the SAME thread so it doesn't cross threads.
-            let ctx_params =
-                LlamaContextParams::default().with_n_ctx(Some(NonZeroU32::new(n_ctx).unwrap()))
+            let ctx_params = LlamaContextParams::default()
+                .with_n_ctx(Some(NonZeroU32::new(n_ctx).unwrap()))
                 .with_n_threads(n_threads)
-                .with_n_threads_batch(n_threads*2);
-                
+                .with_n_threads_batch(n_threads * 2);
+
             let mut ctx = match model.new_context(&backend, ctx_params) {
                 Ok(c) => c,
                 Err(err) => {
@@ -213,10 +217,10 @@ impl LLM for Llama2 {
             let mut batch = LlamaBatch::new(max_batch_len, 1);
             let sequences = tokens_list.chunks(max_batch_len);
 
-            let mut pos = 0;
-            for sequence in sequences {
+            for (seq_num, sequence) in sequences.enumerate() {
                 batch.clear();
-                for token in sequence {
+                for (tkn_num, token) in sequence.iter().enumerate() {
+                    let pos = ((seq_num * max_batch_len) + tkn_num).try_into().unwrap();
                     let is_last = pos == tokens_len - 1;
                     if let Err(err) = batch.add(*token, pos, &[0], is_last) {
                         let _ = tx.blocking_send(Err(LLMError::OtherError(format!(
@@ -225,7 +229,6 @@ impl LLM for Llama2 {
                         ))));
                         return;
                     }
-                    pos += 1;
                 }
 
                 if let Err(err) = ctx.decode(&mut batch) {
@@ -242,13 +245,28 @@ impl LLM for Llama2 {
             let mut sample_pos = n_cur - 1;
             let mut decoder = encoding_rs::UTF_8.new_decoder();
 
-            let seed: Option<u32> = None; // TODO: accept as input
-            let mut sampler = LlamaSampler::chain_simple([
-                LlamaSampler::top_k(top_k),
-                LlamaSampler::top_p(top_p, min_keep),
-                LlamaSampler::temp(temperature),
-                LlamaSampler::dist(seed.unwrap_or(1234)),
-            ]);
+            //building llama_sampler
+            let mut llama_samplers = vec![];
+
+            if let Some(_seed) = seed {
+                llama_samplers.push(LlamaSampler::dist(_seed));
+            }
+            if let Some(_top_k) = top_k {
+                llama_samplers.push(LlamaSampler::top_k(_top_k));
+            }
+            if let Some(_top_p) = top_p {
+                if let Some(_min_keep) = min_keep {
+                    llama_samplers.push(LlamaSampler::top_p(_top_p, _min_keep));
+                }
+            }
+            if let Some(_temperature) = temperature {
+                llama_samplers.push(LlamaSampler::temp(_temperature));
+            }
+            if top_k.is_none() && top_p.is_none() && min_keep.is_none() && temperature.is_none() {
+                llama_samplers.push(LlamaSampler::greedy());
+            }
+
+            let mut sampler = LlamaSampler::chain_simple(llama_samplers);
 
             let max_gen = n_len;
             let max_total = (tokens_len + max_gen).min(n_ctx);

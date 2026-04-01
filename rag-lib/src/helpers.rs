@@ -22,7 +22,7 @@ use crate::{
 };
 
 use futures_util::StreamExt;
-use std::{error::Error, sync::Arc};
+use std::{error::Error, ptr::with_exposed_provenance, sync::Arc};
 use std::path::Path;
 
 pub async fn create_sqlite_store(
@@ -82,6 +82,7 @@ pub async fn get_docs(
     let splitter_options = SplitterOptions::new()
         .with_chunk_size(split_size)
         .with_chunk_overlap(chunk_overlap);
+        
 
     let splitter = TokenSplitter::new(splitter_options);
 
