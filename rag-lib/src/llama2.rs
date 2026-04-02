@@ -31,6 +31,7 @@ pub struct Llama2 {
     model: Arc<LlamaModel>,
     n_ctx: u32,
     n_len: u32,
+    max_n_ctx: u32,
     seed: Option<u32>,
     temperature: Option<f32>,
     top_k: Option<i32>,
@@ -68,10 +69,12 @@ impl Llama2 {
                 .expect("Could not load model"),
         );
 
+        let max_n_ctx = model.n_ctx_train();
         Self {
             model,
             n_ctx,
             n_len,
+            max_n_ctx,
             seed,
             temperature,
             top_k,
@@ -79,7 +82,9 @@ impl Llama2 {
             min_keep,
         }
     }
-
+    pub fn max_n_ctx(&self) -> u32 {
+        self.max_n_ctx
+    }
     pub fn with_ctx(mut self, n_ctx: u32) -> Self {
         self.n_ctx = n_ctx;
         self
@@ -197,7 +202,7 @@ impl LLM for Llama2 {
             let tokens_len = tokens_list.len() as i32;
             let n_len = n_len as i32;
 
-            dprintln!(
+            println!(
                 "n_ctx:{:?}, n_len:{:?}, tokens_len: {:?}",
                 n_ctx,
                 n_len,

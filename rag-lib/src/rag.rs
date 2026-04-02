@@ -107,13 +107,15 @@ impl RAGAssistant {
         llm: L,
         retriev_store: Box<dyn VectorStore>,
         retrieve_doc_count: usize,
+        window_size:usize
     ) -> Self {
-        Self::new_with_llm(retriev_store, retrieve_doc_count, llm).await
+        Self::new_with_llm(llm,retriev_store, retrieve_doc_count, window_size).await
     }
     pub async fn new_with_llm<L: Clone+Into<Box<dyn LLM>>>(
+        llm: L,
         retriev_store: Box<dyn VectorStore>,
         retrieve_doc_count: usize,
-        llm: L,
+        window_size:usize,
     ) -> Self {
         let title_prompt = message_formatter![
             fmt_message!(Message::new_system_message(
@@ -162,10 +164,10 @@ Answer:
             .build()
             .expect("Error building title chain");
 
-        let memory = WindowBufferMemory::new(1);
+        let memory = WindowBufferMemory::new(window_size);
         let retrieval_chain = ConversationalRetrieverChainBuilder::new()
             .llm(llm)
-            .rephrase_question(true)
+            .rephrase_question(false)
             .memory(memory.into())
             .retriever(Retriever::new(retriev_store, retrieve_doc_count))
             .prompt(retrieval_prompt)
