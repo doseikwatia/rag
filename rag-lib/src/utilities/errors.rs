@@ -1,23 +1,19 @@
 use std::{error::Error, fmt};
 
 #[derive(Debug)]
-pub struct AiError {
-    details: String,
+pub enum RAGError {
+    DocLoader(String),
+    VectorStore(String),
+    LLM(String),
 }
-impl AiError {
-    pub fn new(msg: &str) -> AiError {
-        AiError {
-            details: msg.to_string(),
+
+impl fmt::Display for RAGError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RAGError::DocLoader(msg) => write!(f, "DocLoader: {}", msg),
+            RAGError::VectorStore(msg) => write!(f, "VectorStore: {}", msg),
+            RAGError::LLM(msg) => write!(f, "LLM: {}", msg),
         }
     }
 }
-impl fmt::Display for AiError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.details)
-    }
-}
-impl Error for AiError {
-    fn description(&self) -> &str {
-        &self.details
-    }
-}
+impl Error for RAGError {}

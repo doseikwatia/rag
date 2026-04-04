@@ -1,5 +1,5 @@
 use std::{
-    collections::{self, HashMap},
+    collections::HashMap,
     io::Read,
     path::Path,
     pin::Pin,
@@ -64,7 +64,7 @@ impl Loader for ExtractousLoader {
         Ok(Box::pin(stream))
     }
 
-    async fn load_and_split<TS: TextSplitter + 'static>(
+     async fn load_and_split<TS: TextSplitter + 'static>(
         mut self,
         splitter: TS,
     ) -> Result<

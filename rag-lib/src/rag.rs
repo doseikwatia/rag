@@ -1,6 +1,8 @@
+use crate::docloader::get_docs;
 use crate::dprintln;
-use crate::helpers::get_docs; //get_llm
-use crate::utilities::errors::AiError;
+use crate::llm::RagLanguageModel;
+use crate::utilities::errors::RAGError;
+use crate::vectorstore::RagVectorstore; //get_llm
 use futures_util::future::join_all;
 use futures_util::Stream;
 use langchain_rust::chain::{
@@ -26,30 +28,32 @@ use std::pin;
 
 use std::result::Result;
 
-pub struct RAGTrainer {
-    store: Box<dyn VectorStore>,
-    chunk_size: usize,
-    chunk_overlap: usize,
+pub struct RAG {
+    retrieval_chain: ConversationalRetrieverChain,
+    title_chain: LLMChain,
 }
 
-impl RAGTrainer {
+impl RAG {
     pub async fn new(
-        store: Box<dyn VectorStore>,
-        chunk_size: usize,
-        chunk_overlap: usize,
-        _use_gpu: bool,
+        llm: RagLanguageModel,
+        store: RagVectorstore,
+        retrieve_doc_count: usize,
+        window_size: usize,
     ) -> Self {
-        RAGTrainer {
-            store: store,
-            chunk_size: chunk_size,
-            chunk_overlap: chunk_overlap,
+        let (title_chain, retrieval_chain) =
+            Self::build_chains(llm, store, retrieve_doc_count, window_size).await;
+        RAG {
+            title_chain: title_chain,
+            retrieval_chain: retrieval_chain,
         }
     }
 
-    pub async fn train(&self, sources: Vec<String>) -> Result<(), AiError> {
-        let chunk_size = self.chunk_size;
-        let chunk_overlap = self.chunk_overlap;
-
+    pub async fn load_documents(
+        store: RagVectorstore,
+        sources: Vec<String>,
+        chunk_size: usize,
+        chunk_overlap: usize,
+    ) -> Result<(), RAGError> {
         let tasks = sources.into_iter().map(|src| {
             tokio::task::spawn_blocking(move || get_docs(src, chunk_size, chunk_overlap))
         });
@@ -75,8 +79,8 @@ impl RAGTrainer {
         if errors.len() > 0 {
             let error_msgs: Vec<String> = errors.into_iter().map(|e| format!("{}", e)).collect();
             let error_msg = error_msgs.join("\n");
-            let error = AiError::new(&error_msg);
-            return Err(AiError::new(&format!("{:?}", error)));
+            let error = RAGError::DocLoader(error_msg);
+            return Err(error);
         }
 
         // let docs: Vec<Document>
@@ -88,35 +92,20 @@ impl RAGTrainer {
 
         let opt = &VecStoreOptions::default();
         for chunk_docs in docs.chunks(16) {
-            let add_docs_result = self.store.add_documents(&chunk_docs, opt).await;
+            let add_docs_result = store.add_documents(&chunk_docs, opt).await;
             if let Err(error) = add_docs_result {
-                return Err(AiError::new(&format!("{:?}", error)));
+                return Err(RAGError::DocLoader(error.to_string()));
             }
         }
         Ok(())
     }
-}
 
-pub struct RAGAssistant {
-    retrieval_chain: ConversationalRetrieverChain,
-    title_chain: LLMChain,
-}
-
-impl RAGAssistant {
-    pub async fn new<L: Clone+Into<Box<dyn LLM>>>(
+    async fn build_chains<L: Clone + Into<Box<dyn LLM>>, V: Clone + Into<Box<dyn VectorStore>>>(
         llm: L,
-        retriev_store: Box<dyn VectorStore>,
+        retriev_store: V,
         retrieve_doc_count: usize,
-        window_size:usize
-    ) -> Self {
-        Self::new_with_llm(llm,retriev_store, retrieve_doc_count, window_size).await
-    }
-    pub async fn new_with_llm<L: Clone+Into<Box<dyn LLM>>>(
-        llm: L,
-        retriev_store: Box<dyn VectorStore>,
-        retrieve_doc_count: usize,
-        window_size:usize,
-    ) -> Self {
+        window_size: usize,
+    ) -> (LLMChain, ConversationalRetrieverChain) {
         let title_prompt = message_formatter![
             fmt_message!(Message::new_system_message(
                 "Generate a short title for a message in 1 sentence. Stop when done"
@@ -173,10 +162,8 @@ Answer:
             .prompt(retrieval_prompt)
             .build()
             .expect("Error building ConversationalChain");
-        RAGAssistant {
-            retrieval_chain,
-            title_chain,
-        }
+
+        (title_chain, retrieval_chain)
     }
 
     pub async fn clear(&mut self) {

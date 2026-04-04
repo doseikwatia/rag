@@ -1,4 +1,4 @@
-use std::{pin::Pin, rc::Rc, sync::Arc};
+use std::{pin::Pin, sync::Arc};
 
 use async_trait::async_trait;
 use futures_util::Stream;
@@ -8,18 +8,19 @@ use langchain_rust::{
 };
 
 #[derive(Clone)]
-pub struct SharedLLM {
+pub struct RagLanguageModel {
     model: Arc<dyn LLM>,
 }
 
-impl SharedLLM {
-    pub fn new(model:Arc<dyn LLM>)->Self{
+impl RagLanguageModel {
+    pub fn new<L: LLM+'static>(model:L)->Self{
+        let model = Arc::new(model);
         Self{model}
     }
 }
 
 #[async_trait]
-impl LLM for SharedLLM {
+impl LLM for RagLanguageModel {
     async fn generate(&self, messages: &[Message]) -> Result<GenerateResult, LLMError> {
         self.model.generate(messages).await
     }
